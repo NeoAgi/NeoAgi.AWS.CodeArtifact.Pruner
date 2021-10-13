@@ -10,10 +10,9 @@ var client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
     RegionEndpoint = Amazon.RegionEndpoint.USWest2,
 });
 
-string cache = "h:\\package-cache.json";
-
 string domain = "neoagi";
-string repository = "neoagi";
+string repository = "nuget-store";
+string cache = $"h:\\package-cache-{domain}_{repository}.json";
 
 var request = new ListPackagesRequest()
 {
