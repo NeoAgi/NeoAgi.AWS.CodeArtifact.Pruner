@@ -5,6 +5,8 @@ using Amazon.CodeArtifact.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using NeoAgi.CommandLine;
 using NeoAgi.AWS.CodeArtifact.Pruner;
 using NLog.Extensions.Logging;
 using NLog;
@@ -18,14 +20,23 @@ public class Program
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
-            .ConfigureServices((hostContext, services) =>
+            .ConfigureAppConfiguration(builder =>
             {
-                services.AddHostedService<Worker>();
+                builder.Sources.Clear();
+
+                builder.AddJsonFile("appsettings.json", optional: false);
+
+                // builder.AddCommandLineOptions<PrunerConfig>(args);
             })
             .ConfigureLogging(logBuilder =>
             {
                 logBuilder.ClearProviders();
                 logBuilder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
                 logBuilder.AddNLog("nlog.config.xml");
+            })
+        .ConfigureServices((hostContext, services) =>
+            {
+                services.Configure<PrunerConfig>(hostContext.Configuration.GetSection("AppSettings"));
+                services.AddHostedService<Worker>();
             });
 }
