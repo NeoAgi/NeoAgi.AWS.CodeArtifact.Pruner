@@ -49,8 +49,17 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             if (File.Exists(cache))
             {
-                string json = File.ReadAllText(cache);
-                packages = json.FromJson<List<Package>>();
+                DateTime cacheTime = File.GetLastWriteTime(cache);
+                if (cacheTime > DateTime.Now.AddHours(-8))
+                {
+                    string json = File.ReadAllText(cache);
+                    packages = json.FromJson<List<Package>>();
+                    Logger.LogDebug("API Cache created on {CacheWrittenDate} contained {count} packages.", cacheTime, packages.Count);
+                }
+            }
+            else
+            {
+                Logger.LogDebug("API Cache was missing or stale.  Skipping.");
             }
 
             // Reach out to the API if we have an empty structure
