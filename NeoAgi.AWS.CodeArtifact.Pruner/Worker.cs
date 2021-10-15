@@ -119,9 +119,19 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     Logger.LogInformation($"{package.Name} has {package.Versions.Count} versions.");
                     List<string> versionsToDelete = new List<string>(package.Versions.Count - 1);
 
-                    foreach (var version in package.Versions.OrderBy(x => x.Version).SkipLast(1))
+                    int packageItteration = 0;
+                    string versionToKeep = string.Empty;
+                    foreach (var version in package.Versions.OrderBy(x => x.Version))
                     {
-                        versionsToDelete.Add(version.Version);
+                        packageItteration++;
+                        if (packageItteration == package.Versions.Count)
+                        {
+                            versionToKeep = version.Version;
+                        }
+                        else
+                        {
+                            versionsToDelete.Add(version.Version);
+                        }
                     }
 
                     Task delete = client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
@@ -134,7 +144,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         Versions = versionsToDelete
                     });
 
-                    Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.", package.Name, versionsToDelete);
+                    Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.  Keeping {versionToKeep}", package.Name, versionsToDelete, versionToKeep);
                     delete.Wait();
 
                     cacheDirty = true;
@@ -153,24 +163,13 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
-            Logger.LogInformation("4. StopAsync has been called.");
+            Logger.LogDebug("4. StopAsync has been called.");
 
             return Task.CompletedTask;
         }
 
-        private void OnStarted()
-        {
-            Logger.LogInformation("2. OnStarted has been called.");
-        }
-
-        private void OnStopping()
-        {
-            Logger.LogInformation("3. OnStopping has been called.");
-        }
-
-        private void OnStopped()
-        {
-            Logger.LogInformation("5. OnStopped has been called.");
-        }
+        private void OnStarted() { }
+        private void OnStopping() { }
+        private void OnStopped() { }
     }
 }
