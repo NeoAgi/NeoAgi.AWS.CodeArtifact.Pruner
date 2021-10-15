@@ -36,7 +36,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             });
 
             string domain = "neoagi";
-            string repository = "nuget-store";
+            string repository = "neoagi";
             string cache = $"h:\\package-cache-{domain}_{repository}.json";
 
             ListPackagesRequest request = new ListPackagesRequest()
@@ -79,7 +79,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                             Format = summary.Format.Value
                         };
 
-                        Logger.LogInformation($"{summary.Package}");
                         Task<ListPackageVersionsResponse> versions = client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
                         {
                             Domain = domain,
@@ -92,7 +91,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         versions.Wait();
                         foreach (PackageVersionSummary version in versions.Result.Versions)
                         {
-                            Logger.LogInformation($"{version.Version} - {version.Status}");
+                            Logger.LogInformation(" {packageName} - {packageVersion} - {packageStatus}", collection.Name, version.Version, version.Status);
                             collection.Versions.Add(new PackageVersion()
                             {
                                 Version = version.Version,
@@ -109,6 +108,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                 string json = packages.ToJson();
                 File.WriteAllText(cache, json);
+                Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cache);
             }
 
             bool cacheDirty = false;
@@ -134,7 +134,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         Versions = versionsToDelete
                     });
 
-                    Logger.LogInformation($"Scheduling the deletion of {package.Name} versions {string.Join(", ", versionsToDelete)}");
+                    Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.", package.Name, versionsToDelete);
                     delete.Wait();
 
                     cacheDirty = true;
