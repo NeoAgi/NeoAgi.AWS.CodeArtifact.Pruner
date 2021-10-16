@@ -18,7 +18,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         private readonly ILogger Logger;
         private readonly IHostApplicationLifetime AppLifetime;
 
-        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IHostApplicationLifetime appLifetime)
+        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IConfiguration configuration, IHostApplicationLifetime appLifetime)
         {
             Logger = logger;
             AppLifetime = appLifetime;

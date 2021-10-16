@@ -11,7 +11,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
     {
         [Option(FriendlyName = "File Location", ShortName = "l", LongName = "location", Description = "Path of the File to Parse", Required = true)]
         public string FileLocation { get; set; } = string.Empty;
-        [Option(FriendlyName = "Category", ShortName = "c", LongName = "category", Description = "Name of the Category", Required = true)]
+        [Option(FriendlyName = "Category", ShortName = "c", LongName = "category", Description = "Name of the Category", Required = false)]
         public string Category { get; set; } = string.Empty;
     }
 }

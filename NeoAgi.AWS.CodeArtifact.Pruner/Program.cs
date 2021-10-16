@@ -20,13 +20,11 @@ public class Program
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
-            .ConfigureAppConfiguration(builder =>
+            .ConfigureAppConfiguration(configuration =>
             {
-                builder.Sources.Clear();
-
-                builder.AddJsonFile("appsettings.json", optional: false);
-
-                // builder.AddCommandLineOptions<PrunerConfig>(args);
+                configuration.Sources.Clear();
+                configuration.AddJsonFile("appsettings.json", optional: false);
+                configuration.AddOpts<PrunerConfig>("AppSettings", args);
             })
             .ConfigureLogging(logBuilder =>
             {
@@ -34,7 +32,7 @@ public class Program
                 logBuilder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
                 logBuilder.AddNLog("nlog.config.xml");
             })
-        .ConfigureServices((hostContext, services) =>
+            .ConfigureServices((hostContext, services) =>
             {
                 services.Configure<PrunerConfig>(hostContext.Configuration.GetSection("AppSettings"));
                 services.AddHostedService<Worker>();
