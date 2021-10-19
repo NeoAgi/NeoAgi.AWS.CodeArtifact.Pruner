@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using NeoAgi.AWS.CodeArtifact.Pruner;
+using NeoAgi.CommandLine.Exceptions;
 using NLog.Extensions.Logging;
 using NLog;
 
@@ -18,8 +19,13 @@ public class Program
         {
             CreateHostBuilder(args).Build().Run();
         }
-        catch (Exception ex)
+        catch (CommandLineOptionParseException ex)
         {
+            foreach(var option in ex.OptionsWithErrors)
+            {
+                Console.WriteLine($"{option.Option.FriendlyName} - {option.Reason.ToString()}");
+            }
+
             // Console.WriteLine(ex.ToString());
         }
     }
