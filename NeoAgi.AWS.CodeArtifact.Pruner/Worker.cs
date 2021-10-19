@@ -18,7 +18,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         private readonly ILogger Logger;
         private readonly IHostApplicationLifetime AppLifetime;
 
-        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IConfiguration configuration, IHostApplicationLifetime appLifetime)
+        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IHostApplicationLifetime appLifetime)
         {
             Logger = logger;
             AppLifetime = appLifetime;
@@ -34,7 +34,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             var client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
             {
-                RegionEndpoint = Amazon.RegionEndpoint.USWest2,
+                RegionEndpoint = Amazon.RegionEndpoint.USWest2
             });
 
             string domain = "neoagi";

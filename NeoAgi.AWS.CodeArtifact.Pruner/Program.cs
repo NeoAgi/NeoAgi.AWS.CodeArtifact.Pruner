@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
-using NeoAgi.CommandLine;
 using NeoAgi.AWS.CodeArtifact.Pruner;
 using NLog.Extensions.Logging;
 using NLog;
@@ -15,7 +14,14 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        CreateHostBuilder(args).Build().Run();
+        try
+        {
+            CreateHostBuilder(args).Build().Run();
+        }
+        catch (Exception ex)
+        {
+            // Console.WriteLine(ex.ToString());
+        }
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
@@ -24,7 +30,7 @@ public class Program
             {
                 configuration.Sources.Clear();
                 configuration.AddJsonFile("appsettings.json", optional: false);
-                configuration.AddOpts<PrunerConfig>("AppSettings", args);
+                configuration.AddOpts<PrunerConfig>(args, "AppSettings", outputStream: Console.Out);
             })
             .ConfigureLogging(logBuilder =>
             {

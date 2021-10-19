@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\NeoAgi.CommandLine\NeoAgi.CommandLine\NeoAgi.CommandLine.csproj" />
+    <ProjectReference Include="..\..\NeoAgi.CommandLine\NeoAgi.CommandLine.Extensions.Configuration\NeoAgi.CommandLine.Extensions.Configuration.csproj" />
   </ItemGroup>
 
   <ItemGroup>
