@@ -132,7 +132,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             {
                 if (package.Versions.Count > 1)
                 {
-                    Logger.LogInformation($"{package.Name} has {package.Versions.Count} versions.");
+                    Logger.LogInformation("{packageName} has {versionCount} versions.", package.Name, package.Versions.Count);
                     List<string> versionsToDelete = new List<string>(package.Versions.Count - 1);
 
                     int packageItteration = 0;
