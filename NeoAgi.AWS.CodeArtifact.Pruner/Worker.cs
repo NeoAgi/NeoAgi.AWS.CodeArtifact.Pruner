@@ -2,12 +2,14 @@
 using Amazon.CodeArtifact.Model;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using NeoAgi.Runtime.Serialization.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Options;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner
 {
@@ -15,11 +17,13 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
     {
         private readonly ILogger Logger;
         private readonly IHostApplicationLifetime AppLifetime;
+        private readonly PrunerConfig Config;
 
-        public Worker(ILogger<Worker> logger, IHostApplicationLifetime appLifetime)
+        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IHostApplicationLifetime appLifetime)
         {
             Logger = logger;
             AppLifetime = appLifetime;
+            Config = config.Value;
 
             appLifetime.ApplicationStarted.Register(OnStarted);
             appLifetime.ApplicationStopping.Register(OnStopping);
@@ -28,16 +32,14 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            Logger.LogInformation("1. StartAsync has been called.");
-
             var client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
             {
-                RegionEndpoint = Amazon.RegionEndpoint.USWest2,
+                RegionEndpoint = Amazon.RegionEndpoint.USWest2
             });
 
-            string domain = "neoagi";
-            string repository = "neoagi";
-            string cache = $"h:\\package-cache-{domain}_{repository}.json";
+            string domain = Config.Domain;
+            string repository = Config.Repository;
+            string cache = Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json");
 
             ListPackagesRequest request = new ListPackagesRequest()
             {
@@ -49,12 +51,19 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             if (File.Exists(cache))
             {
-                DateTime cacheTime = File.GetLastWriteTime(cache);
-                if (cacheTime > DateTime.Now.AddHours(-8))
+                try
                 {
-                    string json = File.ReadAllText(cache);
-                    packages = json.FromJson<List<Package>>();
-                    Logger.LogDebug("API Cache created on {CacheWrittenDate} contained {count} packages.", cacheTime, packages.Count);
+                    DateTime cacheTime = File.GetLastWriteTime(cache);
+                    if (cacheTime > DateTime.Now.AddHours(-8))
+                    {
+                        string json = File.ReadAllText(cache);
+                        packages = json.FromJson<List<Package>>();
+                        Logger.LogDebug("API Cache created on {CacheWrittenDate} contained {count} packages.", cacheTime, packages.Count);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("Cache File could not be used. Message: {exceptionMessage}.", ex.Message);
                 }
             }
             else
@@ -106,9 +115,16 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     iterationCount++;
                 }
 
-                string json = packages.ToJson();
-                File.WriteAllText(cache, json);
-                Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cache);
+                try
+                {
+                    string json = packages.ToJson();
+                    File.WriteAllText(cache, json);
+                    Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cache);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("Cache File could not be written.  Message: {exceptionMessage}", ex.Message);
+                }
             }
 
             bool cacheDirty = false;
@@ -163,8 +179,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
-            Logger.LogDebug("4. StopAsync has been called.");
-
             return Task.CompletedTask;
         }
 
