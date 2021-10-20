@@ -54,7 +54,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 try
                 {
                     DateTime cacheTime = File.GetLastWriteTime(cache);
-                    if (cacheTime > DateTime.Now.AddHours(-8))
+                    if (cacheTime > DateTime.Now.AddHours(-1 * Config.CacheTTL))
                     {
                         string json = File.ReadAllText(cache);
                         packages = json.FromJson<List<Package>>();
