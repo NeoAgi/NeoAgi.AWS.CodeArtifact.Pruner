@@ -32,7 +32,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            var client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
+            AmazonCodeArtifactClient client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
             {
                 RegionEndpoint = Amazon.RegionEndpoint.USWest2
             });
@@ -41,6 +41,17 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             string repository = Config.Repository;
             string cache = Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json");
 
+            List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
+
+            ProcessDuplicates(client, cancellationToken, packages, domain, repository, cache);
+
+            AppLifetime.StopApplication();
+
+            return Task.CompletedTask;
+        }
+
+        private List<Package> DiscoverPackages(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string cacheFile)
+        {
             ListPackagesRequest request = new ListPackagesRequest()
             {
                 Domain = domain,
@@ -49,14 +60,14 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             List<Package> packages = new List<Package>();
 
-            if (File.Exists(cache))
+            if (!string.IsNullOrEmpty(cacheFile) && File.Exists(cacheFile))
             {
                 try
                 {
-                    DateTime cacheTime = File.GetLastWriteTime(cache);
+                    DateTime cacheTime = File.GetLastWriteTime(cacheFile);
                     if (cacheTime > DateTime.Now.AddHours(-1 * Config.CacheTTL))
                     {
-                        string json = File.ReadAllText(cache);
+                        string json = File.ReadAllText(cacheFile);
                         packages = json.FromJson<List<Package>>();
                         Logger.LogDebug("API Cache created on {CacheWrittenDate} contained {count} packages.", cacheTime, packages.Count);
                     }
@@ -118,8 +129,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 try
                 {
                     string json = packages.ToJson();
-                    File.WriteAllText(cache, json);
-                    Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cache);
+                    File.WriteAllText(cacheFile, json);
+                    Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cacheFile);
                 }
                 catch (Exception ex)
                 {
@@ -127,8 +138,13 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 }
             }
 
+            return packages;
+        }
+
+        public async void ProcessDuplicates(AmazonCodeArtifactClient client, CancellationToken cancellationToken, List<Package> packages, string domain, string repository, string cacheFile)
+        {
             bool cacheDirty = false;
-            foreach (var package in packages)
+            foreach (Package package in packages)
             {
                 if (package.Versions.Count > 1)
                 {
@@ -137,7 +153,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                     int packageItteration = 0;
                     string versionToKeep = string.Empty;
-                    foreach (var version in package.Versions.OrderBy(x => x.Version))
+                    foreach (PackageVersion version in package.Versions.OrderBy(x => x.Version))
                     {
                         packageItteration++;
                         if (packageItteration == package.Versions.Count)
@@ -150,17 +166,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         }
                     }
 
-                    Task delete = client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
-                    {
-                        Domain = domain,
-                        // Namespace = package.Namespace,
-                        Package = package.Name,
-                        Repository = repository,
-                        Format = package.Format,
-                        Versions = versionsToDelete
-                    }, cancellationToken);
-
-                    Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.  Keeping {versionToKeep}", package.Name, versionsToDelete, versionToKeep);
+                    Task delete = RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, versionToKeep, versionsToDelete);
+                    
                     delete.Wait();
 
                     cacheDirty = true;
@@ -169,12 +176,26 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             if (cacheDirty)
             {
-                File.Delete(cache);
+                File.Delete(cacheFile);
+                Logger.LogDebug("CacheFile Dirty.  Removing {cacheFile}", cacheFile);
             }
+        }
 
-            AppLifetime.StopApplication();
+        public Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, string versionToKeep, List<string> versionsToDelete)
+        {
+            Task delete = client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
+            {
+                Domain = domain,
+                // Namespace = package.Namespace,
+                Package = packageName,
+                Repository = repository,
+                Format = packageFormat,
+                Versions = versionsToDelete
+            }, cancellationToken);
 
-            return Task.CompletedTask;
+            Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.  Keeping {versionToKeep}", packageName, versionsToDelete, versionToKeep);
+
+            return delete;
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
