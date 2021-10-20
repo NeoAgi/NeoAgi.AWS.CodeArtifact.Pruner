@@ -78,7 +78,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 int iterationMax = 50;
                 while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
                 {
-                    Task<ListPackagesResponse> response = client.ListPackagesAsync(request);
+                    Task<ListPackagesResponse> response = client.ListPackagesAsync(request, cancellationToken);
 
                     foreach (PackageSummary summary in response.Result.Packages)
                     {
@@ -95,7 +95,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                             Namespace = summary.Namespace,
                             Package = summary.Package,
                             Format = summary.Format
-                        });
+                        }, cancellationToken);
 
                         versions.Wait();
                         foreach (PackageVersionSummary version in versions.Result.Versions)
@@ -158,7 +158,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         Repository = repository,
                         Format = package.Format,
                         Versions = versionsToDelete
-                    });
+                    }, cancellationToken);
 
                     Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.  Keeping {versionToKeep}", package.Name, versionsToDelete, versionToKeep);
                     delete.Wait();
