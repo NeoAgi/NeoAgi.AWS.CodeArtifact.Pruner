@@ -8,15 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.0.80" />
+    <PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.0.82" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="5.0.0" />
     <PackageReference Include="NeoAgi" Version="1.0.4" />
+    <PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.1.0" />
     <PackageReference Include="NLog" Version="4.7.11" />
     <PackageReference Include="NLog.Extensions.Logging" Version="1.7.4" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\NeoAgi.CommandLine\NeoAgi.CommandLine.Extensions.Configuration\NeoAgi.CommandLine.Extensions.Configuration.csproj" />
   </ItemGroup>
 
   <ItemGroup>

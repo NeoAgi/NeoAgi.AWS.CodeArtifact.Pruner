@@ -19,14 +19,9 @@ public class Program
         {
             CreateHostBuilder(args).Build().Run();
         }
-        catch (CommandLineOptionParseException ex)
+        catch (CommandLineOptionParseException)
         {
-            foreach(var option in ex.OptionsWithErrors)
-            {
-                Console.WriteLine($"{option.Option.FriendlyName} - {option.Reason.ToString()}");
-            }
-
-            // Console.WriteLine(ex.ToString());
+            // Squelch the exception.  Output is captured below.
         }
     }
 
