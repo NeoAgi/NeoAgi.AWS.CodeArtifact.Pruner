@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using NeoAgi.Text.Json;
+using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner
 {
@@ -30,7 +31,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             appLifetime.ApplicationStopped.Register(OnStopped);
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
             AmazonCodeArtifactClient client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
             {
@@ -43,11 +44,15 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
 
-            ProcessDuplicates(client, cancellationToken, packages, domain, repository, cache);
+            Task<IEnumerable<Package>> versionsToRemove = ApplyPolicyAsync(packages);
+
+            ProcessRemovals(client, cancellationToken, versionsToRemove.Result, domain, repository, cache);
 
             AppLifetime.StopApplication();
 
-            return Task.CompletedTask;
+            await Task.CompletedTask;
+
+            return;
         }
 
         private List<Package> DiscoverPackages(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string cacheFile)
@@ -141,37 +146,70 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             return packages;
         }
 
-        public async void ProcessDuplicates(AmazonCodeArtifactClient client, CancellationToken cancellationToken, List<Package> packages, string domain, string repository, string cacheFile)
+        public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages)
+        {
+            return await Task<IEnumerable<Package>>.Factory.StartNew(() =>
+            {
+                List<Package> outOfPolicy = new List<Package>();
+
+                IPolicy[] policies = new IPolicy[]
+                {
+                    new PersistVersionCount("NeoAgi*", int.MaxValue),
+                    new PersistVersionCount("*", 2)
+                };
+
+                foreach (Package package in packages)
+                {
+                    foreach (IPolicy policy in policies)
+                    {
+                        if (policy.IsMatch(package))
+                        {
+                            Package pkg = new Package()
+                            {
+                                Name = package.Name,
+                                Format = package.Format,
+                                Namespace = package.Namespace
+                            };
+
+                            List<PackageVersion> versionsInPolicy = new List<PackageVersion>(policy.Match(package));
+                            foreach (PackageVersion version in package.Versions)
+                            {
+                                bool isFound = false;
+                                foreach (PackageVersion inPolicyVersion in versionsInPolicy)
+                                {
+                                    if (inPolicyVersion.Version.Equals(version.Version, StringComparison.OrdinalIgnoreCase) && inPolicyVersion.Name.Equals(version.Name, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        isFound = true;
+                                        break;
+                                    }
+                                }
+
+                                if (!isFound)
+                                    pkg.Versions.Add(version);
+                            }
+
+                            if (pkg.Versions.Count > 0)
+                                outOfPolicy.Add(pkg);
+
+                            break;
+                        }
+                    }
+                }
+
+                return outOfPolicy;
+            });
+        }
+
+        public void ProcessRemovals(AmazonCodeArtifactClient client, CancellationToken cancellationToken, IEnumerable<Package> packages, string domain, string repository, string cacheFile)
         {
             bool cacheDirty = false;
             foreach (Package package in packages)
             {
-                if (package.Versions.Count > 1)
-                {
-                    Logger.LogInformation("{packageName} has {versionCount} versions.", package.Name, package.Versions.Count);
-                    List<string> versionsToDelete = new List<string>(package.Versions.Count - 1);
+                Task delete = RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
 
-                    int packageItteration = 0;
-                    string versionToKeep = string.Empty;
-                    foreach (PackageVersion version in package.Versions.OrderBy(x => x.Version))
-                    {
-                        packageItteration++;
-                        if (packageItteration == package.Versions.Count)
-                        {
-                            versionToKeep = version.Version;
-                        }
-                        else
-                        {
-                            versionsToDelete.Add(version.Version);
-                        }
-                    }
+                delete.Wait();
 
-                    Task delete = RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, versionToKeep, versionsToDelete);
-                    
-                    delete.Wait();
-
-                    cacheDirty = true;
-                }
+                cacheDirty = true;
             }
 
             if (cacheDirty)
@@ -181,21 +219,27 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             }
         }
 
-        public Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, string versionToKeep, List<string> versionsToDelete)
+        public async Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, List<PackageVersion> versionsToDelete)
         {
-            Task delete = client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
+            Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.", packageName, versionsToDelete);
+
+            List<string> versionsToDeleteString = new List<string>();
+            foreach (PackageVersion version in versionsToDelete)
+            {
+                versionsToDeleteString.Add(version.Version);
+            }
+
+            await client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
             {
                 Domain = domain,
                 // Namespace = package.Namespace,
                 Package = packageName,
                 Repository = repository,
                 Format = packageFormat,
-                Versions = versionsToDelete
+                Versions = versionsToDeleteString
             }, cancellationToken);
 
-            Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.  Keeping {versionToKeep}", packageName, versionsToDelete, versionToKeep);
-
-            return delete;
+            return;
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
