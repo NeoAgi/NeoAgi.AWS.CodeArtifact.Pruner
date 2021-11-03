@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using NeoAgi.AWS.CodeArtifact.Pruner;
+using NeoAgi;
 using NeoAgi.CommandLine.Exceptions;
 using NLog.Extensions.Logging;
 using NLog;
@@ -33,10 +34,11 @@ public class Program
                 configuration.AddJsonFile("appsettings.json", optional: false);
                 configuration.AddOpts<PrunerConfig>(args, "AppSettings", outputStream: Console.Out);
             })
-            .ConfigureLogging(logBuilder =>
+            .ConfigureLogging((hostContext, logBuilder) =>
             {
                 logBuilder.ClearProviders();
-                logBuilder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+                logBuilder.SetMinimumLevel(Enum<Microsoft.Extensions.Logging.LogLevel>.ParseOrDefault(
+                    hostContext.Configuration.GetValue<string>("AppSettings:LogLevel"), Microsoft.Extensions.Logging.LogLevel.Debug));
                 logBuilder.AddNLog("nlog.config.xml");
             })
             .ConfigureServices((hostContext, services) =>
