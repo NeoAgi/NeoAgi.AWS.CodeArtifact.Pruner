@@ -90,6 +90,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             // Reach out to the API if we have an empty structure
             if (packages.Count == 0)
             {
+                int concurrencyLimit = 20;
+                List<Task> tasks = new List<Task>(concurrencyLimit);
                 int iterationCount = 0;
                 int iterationMax = 50;
                 while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
@@ -104,33 +106,24 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                             Format = summary.Format.Value
                         };
 
-                        Task<ListPackageVersionsResponse> versions = client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
-                        {
-                            Domain = domain,
-                            Repository = repository,
-                            Namespace = summary.Namespace,
-                            Package = summary.Package,
-                            Format = summary.Format
-                        }, cancellationToken);
-
-                        versions.Wait();
-                        foreach (PackageVersionSummary version in versions.Result.Versions)
-                        {
-                            Logger.LogDebug("{packageName} - {packageVersion} - {packageStatus}", collection.Name, version.Version, version.Status);
-                            collection.Versions.Add(new PackageVersion()
-                            {
-                                Version = version.Version,
-                                Revision = version.Revision
-                            });
-                        }
-
-                        Logger.LogInformation("Discovered {packageName} with {versionCount} versions.", collection.Name, collection.Versions.Count);
                         packages.Add(collection);
+
+                        tasks.Add(DiscoverPackageVersionsAsync(client, cancellationToken, collection, summary, domain, repository));
+
+                        // Throttle the task queue a bit
+                        if (tasks.Count > concurrencyLimit)
+                        {
+                            Task t = Task.WhenAny(tasks.ToArray());
+                            tasks.Remove(t);
+                        }
                     }
 
                     request.NextToken = response.Result.NextToken;
                     iterationCount++;
                 }
+
+                // Block until we're complete
+                Task.WaitAll(tasks.ToArray());
 
                 try
                 {
@@ -145,6 +138,33 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             }
 
             return packages;
+        }
+
+        protected async Task DiscoverPackageVersionsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, Package package, PackageSummary summary, string domain, string repository)
+        {
+            await Task.Factory.StartNew(() =>
+            {
+                Task<ListPackageVersionsResponse> versions = client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
+                {
+                    Domain = domain,
+                    Repository = repository,
+                    Namespace = summary.Namespace,
+                    Package = summary.Package,
+                    Format = summary.Format
+                }, cancellationToken);
+
+                foreach (PackageVersionSummary version in versions.Result.Versions)
+                {
+                    Logger.LogDebug("{packageName} - {packageVersion} - {packageStatus}", package.Name, version.Version, version.Status);
+                    package.Versions.Add(new PackageVersion()
+                    {
+                        Version = version.Version,
+                        Revision = version.Revision
+                    });
+                }
+
+                Logger.LogInformation("Discovered {packageName} with {versionCount} versions.", package.Name, package.Versions.Count);
+            });
         }
 
         public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages)
