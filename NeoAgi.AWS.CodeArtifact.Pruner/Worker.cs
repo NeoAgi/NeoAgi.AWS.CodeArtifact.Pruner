@@ -113,6 +113,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         // Throttle the task queue a bit
                         if (tasks.Count > concurrencyLimit)
                         {
+                            Logger.LogDebug("Waiting for threads...");
                             Task t = Task.WhenAny(tasks.ToArray());
                             tasks.Remove(t);
                         }
@@ -123,6 +124,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 }
 
                 // Block until we're complete
+                Logger.LogDebug("Waiting for completion...");
                 Task.WaitAll(tasks.ToArray());
 
                 try
@@ -197,7 +199,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, List<PackageVersion> versionsToDelete)
         {
-            Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.", packageName, versionsToDelete);
+            Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.", packageName, string.Join(", ", versionsToDelete));
 
             List<string> versionsToDeleteString = new List<string>();
             foreach (PackageVersion version in versionsToDelete)

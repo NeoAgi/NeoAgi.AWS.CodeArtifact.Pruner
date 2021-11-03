@@ -25,7 +25,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
                 effectiveNamespace = Namespace.Substring(0, Namespace.IndexOf('*'));
             }
 
-            return package.Name.StartsWith(effectiveNamespace);
+            return package.Name.StartsWith(effectiveNamespace, StringComparison.OrdinalIgnoreCase);
         }
 
         public IEnumerable<PackageVersion> Match(Package package)
