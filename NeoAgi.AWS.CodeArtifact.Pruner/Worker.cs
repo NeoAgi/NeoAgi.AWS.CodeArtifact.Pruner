@@ -116,7 +116,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         versions.Wait();
                         foreach (PackageVersionSummary version in versions.Result.Versions)
                         {
-                            Logger.LogInformation(" {packageName} - {packageVersion} - {packageStatus}", collection.Name, version.Version, version.Status);
+                            Logger.LogDebug("{packageName} - {packageVersion} - {packageStatus}", collection.Name, version.Version, version.Status);
                             collection.Versions.Add(new PackageVersion()
                             {
                                 Version = version.Version,
@@ -124,6 +124,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                             });
                         }
 
+                        Logger.LogInformation("Discovered {packageName} with {versionCount} versions.", collection.Name, collection.Versions.Count);
                         packages.Add(collection);
                     }
 
@@ -148,56 +149,11 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages)
         {
-            return await Task<IEnumerable<Package>>.Factory.StartNew(() =>
-            {
-                List<Package> outOfPolicy = new List<Package>();
+            PolicyManager<Package> manager = new PolicyManager<Package>();
+            manager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
+            manager.Policies.Add(new PersistVersionCount("*", 2));
 
-                IPolicy[] policies = new IPolicy[]
-                {
-                    new PersistVersionCount("NeoAgi*", int.MaxValue),
-                    new PersistVersionCount("*", 2)
-                };
-
-                foreach (Package package in packages)
-                {
-                    foreach (IPolicy policy in policies)
-                    {
-                        if (policy.IsMatch(package))
-                        {
-                            Package pkg = new Package()
-                            {
-                                Name = package.Name,
-                                Format = package.Format,
-                                Namespace = package.Namespace
-                            };
-
-                            List<PackageVersion> versionsInPolicy = new List<PackageVersion>(policy.Match(package));
-                            foreach (PackageVersion version in package.Versions)
-                            {
-                                bool isFound = false;
-                                foreach (PackageVersion inPolicyVersion in versionsInPolicy)
-                                {
-                                    if (inPolicyVersion.Version.Equals(version.Version, StringComparison.OrdinalIgnoreCase) && inPolicyVersion.Name.Equals(version.Name, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        isFound = true;
-                                        break;
-                                    }
-                                }
-
-                                if (!isFound)
-                                    pkg.Versions.Add(version);
-                            }
-
-                            if (pkg.Versions.Count > 0)
-                                outOfPolicy.Add(pkg);
-
-                            break;
-                        }
-                    }
-                }
-
-                return outOfPolicy;
-            });
+            return await manager.OutOfPolicyAsync(packages);
         }
 
         public void ProcessRemovals(AmazonCodeArtifactClient client, CancellationToken cancellationToken, IEnumerable<Package> packages, string domain, string repository, string cacheFile)
