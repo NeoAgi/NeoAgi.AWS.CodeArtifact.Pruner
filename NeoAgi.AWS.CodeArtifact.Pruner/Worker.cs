@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using NeoAgi.Text.Json;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
+using System.Threading;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner
 {
@@ -173,7 +174,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             PolicyManager<Package> manager = new PolicyManager<Package>();
             manager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
-            manager.Policies.Add(new PersistVersionCount("*", 2));
+            manager.Policies.Add(new PersistVersionCount("*", 3));
 
             return await manager.OutOfPolicyAsync(packages);
         }
@@ -199,7 +200,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, List<PackageVersion> versionsToDelete)
         {
-            Logger.LogInformation("Scheduling the deletion of {packageName} versions {versionsToDelete}.", packageName, string.Join(", ", versionsToDelete));
+            Logger.LogInformation("Scheduling the deletion of {packageName} version(s): {versionsToDelete}.", packageName, string.Join(", ", versionsToDelete.Select(x => x.Version)));
 
             List<string> versionsToDeleteString = new List<string>();
             foreach (PackageVersion version in versionsToDelete)
