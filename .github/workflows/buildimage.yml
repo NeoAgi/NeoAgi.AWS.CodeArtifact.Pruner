@@ -46,7 +46,9 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        # Note: Current ecr-login action does not work for public repositories, for now execute the direct command
+        # uses: aws-actions/amazon-ecr-login@v1
+        run: aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}
 
       - name: Build the Image
         run: | 
