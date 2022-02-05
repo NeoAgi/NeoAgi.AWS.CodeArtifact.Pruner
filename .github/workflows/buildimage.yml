@@ -40,8 +40,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          aws-access-key-id: ${{ secrets.NEOAGI_CODE_ARTIFACT_CI_PUSH_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.NEOAGI_CODE_ARTIFACT_CI_PUSH_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.NEOAGI_PUBLIC_DOCKER_ID }}
+          aws-secret-access-key: ${{ secrets.NEOAGI_PUBLIC_DOCKER_KEY }}
           aws-region: us-west-2
 
       - name: Login to Amazon ECR
@@ -50,7 +50,7 @@ jobs:
 
       - name: Build the Image
         run: | 
-          docker build -t neoagi.aws.codeartifact.pruner:latest . -f Dockerfile
+          docker build -t neoagi.aws.codeartifact.pruner:latest -t neoagi.aws.codearifact.pruner:x7q2k3a7 . -f Dockerfile
         shell: bash
       
       - name: Tag the Image
