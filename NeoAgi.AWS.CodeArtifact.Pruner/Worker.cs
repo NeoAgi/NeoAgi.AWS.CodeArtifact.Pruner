@@ -45,7 +45,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             foreach (string repository in repositories)
             {
-                Logger.LogWarning("Starting discovery for {repository}/{domain}", repository, domain);
+                Logger.LogInformation("Starting discovery for {repository}/{domain}", repository, domain);
                 string cache = Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json");
 
                 List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
