@@ -1,6 +1,6 @@
 # This is a basic workflow to help you get started with Actions
 
-name: Build and Publish NeoAgi.Policy.DiscoveryAgent Image
+name: Build and Publish NeoAgi.AWS.CodeArtifact.Pruner Image
 
 # Controls when the workflow will run
 on:
@@ -29,7 +29,44 @@ jobs:
             action-message: "${{ github.ref_name }} with SHA of ${{ github.sha }} Starting Build"
 
       - name: Init Workflow Variables
-        run: echo "TAG_NAME=$(echo ${{ github.ref_name }} | sed s/v//)" >> $GITHUB_ENV
+        run: |
+            echo "TAG_NAME=$(echo ${{ github.ref_name }} | sed s/v// )" >> $GITHUB_ENV
+            echo "SHORT_HASH=$(echo ${{ github.sha }} | cut -c 1-8 )" >> $GITHUB_ENV
 
-      - name: Test Var
-        run: echo "Tag Name - ${{ env.TAG_NAME }}"
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.NEOAGI_CODE_ARTIFACT_CI_PUSH_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.NEOAGI_CODE_ARTIFACT_CI_PUSH_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build the Image
+        run: | 
+          docker build -t neoagi.aws.codeartifact.pruner:latest . -f Dockerfile
+        shell: bash
+      
+      - name: Tag the Image
+        run: |
+          docker tag neoagi.aws.codeartifact.pruner:latest ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:${{ env.TAG_NAME }}
+          docker tag neoagi.aws.codeartifact.pruner:latest ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:${{ env.SHORT_HASH }}
+          docker tag neoagi.aws.codeartifact.pruner:latest ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:latest
+        shell: bash
+
+      - name: Push the Image
+        run: |
+          docker push ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:${{ env.TAG_NAME }}
+          docker push ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:${{ env.SHORT_HASH }}
+          docker push ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:latest
+        shell: bash
+
+      - name: Notify
+        uses: neoagi/actions-slack-notify@v1
+        if: always()
