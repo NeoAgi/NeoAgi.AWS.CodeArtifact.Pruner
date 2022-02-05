@@ -9,7 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
-using NeoAgi.Text.Json;
+using System.Text.Json;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System.Threading;
 using System.IO;
@@ -70,7 +70,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Repository = repository
             };
 
-            List<Package> packages = new List<Package>();
+            List<Package>? packages = new List<Package>();
 
             if (!string.IsNullOrEmpty(cacheFile) && File.Exists(cacheFile))
             {
@@ -80,7 +80,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     if (cacheTime > DateTime.Now.AddHours(-1 * Config.CacheTTL))
                     {
                         string json = File.ReadAllText(cacheFile);
-                        packages = json.FromJson<List<Package>>();
+                        packages = JsonSerializer.Deserialize<List<Package>>(json);
                         Logger.LogDebug("API Cache created on {CacheWrittenDate} contained {count} packages.", cacheTime, packages.Count);
                     }
                 }
@@ -136,7 +136,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                 try
                 {
-                    string json = packages.ToJson();
+                    string json = JsonSerializer.Serialize(packages);
                     File.WriteAllText(cacheFile, json);
                     Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cacheFile);
                 }

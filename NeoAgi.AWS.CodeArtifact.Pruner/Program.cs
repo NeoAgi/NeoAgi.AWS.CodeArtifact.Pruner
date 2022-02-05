@@ -30,7 +30,7 @@ public class Program
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
             .ConfigureAppConfiguration(configuration =>
-            {
+            {   
                 configuration.Sources.Clear();
                 configuration.AddJsonFile("appsettings.json", optional: false);
                 configuration.AddOpts<PrunerConfig>(args, "AppSettings", outputStream: Console.Out);

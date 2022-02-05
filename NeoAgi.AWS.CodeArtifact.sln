@@ -5,7 +5,7 @@ VisualStudioVersion = 17.0.31717.71
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NeoAgi.AWS.CodeArtifact.Pruner", "NeoAgi.AWS.CodeArtifact.Pruner\NeoAgi.AWS.CodeArtifact.Pruner.csproj", "{106FF619-48FA-474F-ADF4-0ED7B97F88C0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NeoAgi.AWS.CodeArtifact.Tests", "NeoAgi.AWS.CodeArtifact.Tests\NeoAgi.AWS.CodeArtifact.Tests.csproj", "{01E7187C-01AD-4850-8FB8-722C9D868D44}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NeoAgi.AWS.CodeArtifact.Tests", "NeoAgi.AWS.CodeArtifact.Tests\NeoAgi.AWS.CodeArtifact.Tests.csproj", "{01E7187C-01AD-4850-8FB8-722C9D868D44}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Frontends", "Frontends", "{ACD7D5DD-2065-4A46-8F38-CBAFDF4717A2}"
 EndProject
@@ -14,8 +14,16 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D7076A84-A65B-497F-B41E-CB27698DCE91}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		Dockerfile = Dockerfile
 		LICENSE = LICENSE
 		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".github", ".github", "{7E96C399-CC4D-4173-B903-62330B4ED582}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflows", "workflows", "{E5BAC417-770A-4020-92F6-F39573819B9D}"
+	ProjectSection(SolutionItems) = preProject
+		.github\workflows\buildimage.yml = .github\workflows\buildimage.yml
 	EndProjectSection
 EndProject
 Global
@@ -39,6 +47,8 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{106FF619-48FA-474F-ADF4-0ED7B97F88C0} = {ACD7D5DD-2065-4A46-8F38-CBAFDF4717A2}
 		{01E7187C-01AD-4850-8FB8-722C9D868D44} = {59262EC0-E2ED-4CC8-A38F-9C941EB0C7BC}
+		{7E96C399-CC4D-4173-B903-62330B4ED582} = {D7076A84-A65B-497F-B41E-CB27698DCE91}
+		{E5BAC417-770A-4020-92F6-F39573819B9D} = {7E96C399-CC4D-4173-B903-62330B4ED582}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {AD763B99-F826-45AF-872A-F42ED29B9F23}
