@@ -11,6 +11,7 @@ using NeoAgi;
 using NeoAgi.CommandLine.Exceptions;
 using NLog.Extensions.Logging;
 using NLog;
+using System;
 
 public class Program
 {

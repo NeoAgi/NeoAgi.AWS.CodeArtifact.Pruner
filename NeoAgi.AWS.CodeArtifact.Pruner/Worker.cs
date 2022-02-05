@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using NeoAgi.Text.Json;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System.Threading;
+using System.IO;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner
 {
@@ -39,15 +40,20 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 RegionEndpoint = Amazon.RegionEndpoint.USWest2
             });
 
+            string[] repositories = Config.Repository.Split(',');
             string domain = Config.Domain;
-            string repository = Config.Repository;
-            string cache = Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json");
 
-            List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
+            foreach (string repository in repositories)
+            {
+                Logger.LogInformation("Starting discovery for {repository}/{domain}", repository, domain);
+                string cache = Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json");
 
-            Task<IEnumerable<Package>> versionsToRemove = ApplyPolicyAsync(packages);
+                List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
 
-            ProcessRemovals(client, cancellationToken, versionsToRemove.Result, domain, repository, cache);
+                Task<IEnumerable<Package>> versionsToRemove = ApplyPolicyAsync(packages);
+
+                ProcessRemovals(client, cancellationToken, versionsToRemove.Result, domain, repository, cache);
+            }
 
             AppLifetime.StopApplication();
 
@@ -166,7 +172,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     });
                 }
 
-                Logger.LogInformation("Discovered {packageName} with {versionCount} versions.", package.Name, package.Versions.Count);
+                Logger.LogDebug("Discovered {domain}/{repository}/{packageName} with {versionCount} versions.", package.Name, domain, repository, package.Versions.Count);
             });
         }
 
@@ -200,7 +206,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, List<PackageVersion> versionsToDelete)
         {
-            Logger.LogInformation("Scheduling the deletion of {packageName} version(s): {versionsToDelete}.", packageName, string.Join(", ", versionsToDelete.Select(x => x.Version)));
+            Logger.LogInformation("Scheduling the deletion of {packageName} from {domain}/{repository} version(s): {versionsToDelete}.", packageName, domain, repository, string.Join(", ", versionsToDelete.Select(x => x.Version)));
 
             List<string> versionsToDeleteString = new List<string>();
             foreach (PackageVersion version in versionsToDelete)
