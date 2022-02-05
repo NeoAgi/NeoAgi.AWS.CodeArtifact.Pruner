@@ -6,11 +6,11 @@ WORKDIR /src/app
 
 # Build the Application
 RUN dotnet restore NeoAgi.AWS.CodeArtifact.Pruner/NeoAgi.AWS.CodeArtifact.Pruner.csproj
-RUN dotnet build NeoAgi.AWS.CodeArtifact.Pruner/NeoAgi.AWS.CodeArtifact.Pruner.csproj -c Release -o /app/build
+RUN dotnet build NeoAgi.AWS.CodeArtifact.Pruner/NeoAgi.AWS.CodeArtifact.Pruner.csproj -c Release -r linux-x64 --self-contained -o /app/build
 
 # Publish the Application
 FROM build AS publish
-RUN dotnet publish NeoAgi.AWS.CodeArtifact.Pruner/NeoAgi.AWS.CodeArtifact.Pruner.csproj -c Release -r linux-x64 -o /app/release
+RUN dotnet publish NeoAgi.AWS.CodeArtifact.Pruner/NeoAgi.AWS.CodeArtifact.Pruner.csproj -c Release -r linux-x64 --self-contained -o /app/release
 
 # Build our Distroless Layer
 FROM gcr.io/distroless/dotnet AS final
