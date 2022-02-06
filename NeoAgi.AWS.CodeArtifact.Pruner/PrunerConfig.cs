@@ -11,7 +11,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
     {
         [Option(FriendlyName = "Cache Location", ShortName = "c", LongName = "cacheLocation", Description = "Directory to hold for local cache.", Required = false)]
         public string CacheLocation { get; set; } = string.Empty;
-        [Option(FriendlyName = "Logging Level", ShortName = "ll", LongName = "loglevel", Description = "Minimum Logging Level to emit.  Availabile options are None, Debug, Information, Warning, Error, Critical.  Default is Information.", Required = false)]
+        [Option(FriendlyName = "Logging Level", ShortName = "ll", LongName = "loglevel", Description = "Minimum Logging Level to emit.  Availabile options are None, Trace, Debug, Information, Warning, Error, Critical.  Default is Information.", Required = false)]
         public string LogLevel { get; set; } = "information";
         [Option(FriendlyName = "Cache TTL", ShortName = "ttl", LongName = "cacheTtl", Description = "Number of hours to consider the Cache Location valid for.  Default is 8 hours.  Set to 0 to delete cache.", Required = false)]
         public int CacheTTL { get; set; } = 8;
@@ -23,5 +23,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         public string Repository { get; set; } = string.Empty;
         [Option(FriendlyName = "Concurrency Maximum Limit", ShortName = "t", LongName = "threads", Description = "Maximum threads that will be used for background tasks.  Set to 0 to assume Processor Count - 1.")]
         public int ConcurrencyLimit { get; set; } = 0;
+        [Option(FriendlyName = "Page Limit", ShortName = "p", LongName = "pageLimit", Description = "Maximum number of pages to return from AWS Calls.  Default to 50 pages, or about 2,500 packages.")]
+        public int PageLimit { get; set; } = 50;
     }
 }

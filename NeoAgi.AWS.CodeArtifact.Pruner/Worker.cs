@@ -40,6 +40,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 RegionEndpoint = Amazon.RegionEndpoint.USWest2
             });
 
+            // Adjust settings
             string[] repositories = Config.Repository.Split(',');
             string domain = Config.Domain;
 
@@ -56,6 +57,13 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Logger.LogDebug("Concurrency was set less than zero.  Disabling threaded operations.");
             }
 
+            // Ensure bounds on page limit
+            if(Config.PageLimit < 1 || Config.PageLimit > 1000)
+            {
+                Logger.LogWarning("Page Limit was set to {limit} which is out of bounds.  Defaulting back to {default}.", Config.PageLimit, 50);
+                Config.PageLimit = 50;
+            }
+
             // Enumerate each repository in the domain
             foreach (string repository in repositories)
             {
@@ -66,7 +74,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                 List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
 
-                IEnumerable<Package> versionsToRemove = await ApplyPolicyAsync(packages);
+                IEnumerable<Package> versionsToRemove = await ApplyPolicyAsync(packages, domain, repository);
 
                 await ProcessRemovalsAsync(client, cancellationToken, versionsToRemove, domain, repository, cache);
             }
@@ -117,7 +125,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 int concurrencyLimit = Config.ConcurrencyLimit;
                 List<Task> tasks = new List<Task>(concurrencyLimit);
                 int iterationCount = 0;
-                int iterationMax = 50;
+                int iterationMax = Config.PageLimit;
                 while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
                 {
                     Task<ListPackagesResponse> response = client.ListPackagesAsync(request, cancellationToken);
@@ -168,6 +176,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 }
             }
 
+            Logger.LogInformation("Discovered {packageCount} from {domain}/{repository}.", packages?.Count, domain, repository);
+
             return packages ?? new List<Package>(0);
         }
 
@@ -199,11 +209,13 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             });
         }
 
-        public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages)
+        public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages, string domain, string repository)
         {
             PolicyManager<Package> manager = new PolicyManager<Package>();
             manager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
             manager.Policies.Add(new PersistVersionCount("*", 3));
+
+            Logger.LogInformation("Applying {policyCount} policies across {packageCount} packages on {domain}/{repository}", manager.Policies.Count, packages.Count, domain, repository);
 
             return await manager.OutOfPolicyAsync(packages);
         }
