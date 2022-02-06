@@ -21,5 +21,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         public string Domain { get; set; } = string.Empty;
         [Option(FriendlyName = "Artifact Repository", ShortName = "r", LongName = "repository", Description = "AWS Artifact Repository to query with.", Required = true)]
         public string Repository { get; set; } = string.Empty;
+        [Option(FriendlyName = "Concurrency Maximum Limit", ShortName = "t", LongName = "threads", Description = "Maximum threads that will be used for background tasks.  Set to 0 to assume Processor Count - 1.")]
+        public int ConcurrencyLimit { get; set; } = 0;
     }
 }
