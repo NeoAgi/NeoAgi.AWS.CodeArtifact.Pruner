@@ -1,18 +1,18 @@
 ﻿using Amazon.CodeArtifact;
 using Amazon.CodeArtifact.Model;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
-using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System.Threading;
-using System.IO;
+using System.Threading.Tasks;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner
 {
@@ -45,7 +45,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             string domain = Config.Domain;
 
             // Set our concurrency limit
-            if(Config.ConcurrencyLimit == 0 && Environment.ProcessorCount > 1)
+            if (Config.ConcurrencyLimit == 0 && Environment.ProcessorCount > 1)
             {
                 Config.ConcurrencyLimit = (Environment.ProcessorCount - 1) * 2;
                 Logger.LogDebug("Found {processorCount}.  Using {threads} threads for concurency.", Environment.ProcessorCount, Config.ConcurrencyLimit);
@@ -58,11 +58,18 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             }
 
             // Ensure bounds on page limit
-            if(Config.PageLimit < 1 || Config.PageLimit > 1000)
+            if (Config.PageLimit < 1 || Config.PageLimit > 1000)
             {
                 Logger.LogWarning("Page Limit was set to {limit} which is out of bounds.  Defaulting back to {default}.", Config.PageLimit, 50);
                 Config.PageLimit = 50;
             }
+
+            // Disable our checkpoint value if indicated
+            if (Config.CheckpointInterval == 0)
+                Config.CheckpointInterval = int.MaxValue;
+
+            if (Config.DryRun)
+                Logger.LogWarning("Dry Run is enabled.  No changes will be made.");
 
             // Enumerate each repository in the domain
             foreach (string repository in repositories)
@@ -124,6 +131,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             {
                 int concurrencyLimit = Config.ConcurrencyLimit;
                 List<Task> tasks = new List<Task>(concurrencyLimit);
+                int packageIteration = 0;
                 int iterationCount = 0;
                 int iterationMax = Config.PageLimit;
                 while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
@@ -149,6 +157,11 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                             Task t = Task.WhenAny(tasks.ToArray());
                             tasks.Remove(t);
                         }
+
+                        if (packageIteration % Config.CheckpointInterval == 0)
+                            Logger.LogInformation("Discovered {packageCount} packages on {domain}/{repository}", packageIteration, domain, repository);
+
+                        packageIteration++;
                     }
 
                     request.NextToken = response.Result.NextToken;
@@ -224,15 +237,15 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             if (packages.Count() > 0)
             {
-
-                Logger.LogInformation("Scheduling the deletion of {packageCount}", packages.Count());
+                Logger.LogDebug("Scheduling the deletion of {packageCount} package(s) from {domain}/{repository}", packages.Count(), domain, repository);
 
                 await Task.Run(async () =>
                 {
+                    List<Task> removalTasks = new List<Task>();
                     bool cacheDirty = false;
                     foreach (Package package in packages)
                     {
-                        await RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
+                        Task remove = RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
 
                         cacheDirty = true;
                     }
@@ -242,6 +255,9 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         File.Delete(cacheFile);
                         Logger.LogDebug("CacheFile Dirty.  Removing {cacheFile}", cacheFile);
                     }
+
+                    Task.WaitAll(removalTasks.ToArray());
+                    Logger.LogTrace("Waiting for removal tasks to complete...");
 
                     return Task.CompletedTask;
                 });
@@ -257,21 +273,24 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             Logger.LogInformation("Scheduling the deletion of {packageName} from {domain}/{repository} version(s): {versionsToDelete}.", packageName, domain, repository, string.Join(", ", versionsToDelete.Select(x => x.Version)));
 
-            List<string> versionsToDeleteString = new List<string>();
-            foreach (PackageVersion version in versionsToDelete)
+            if (!Config.DryRun)
             {
-                versionsToDeleteString.Add(version.Version);
-            }
+                List<string> versionsToDeleteString = new List<string>();
+                foreach (PackageVersion version in versionsToDelete)
+                {
+                    versionsToDeleteString.Add(version.Version);
+                }
 
-            await client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
-            {
-                Domain = domain,
-                // Namespace = package.Namespace,
-                Package = packageName,
-                Repository = repository,
-                Format = packageFormat,
-                Versions = versionsToDeleteString
-            }, cancellationToken);
+                await client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
+                {
+                    Domain = domain,
+                    // Namespace = package.Namespace,
+                    Package = packageName,
+                    Repository = repository,
+                    Format = packageFormat,
+                    Versions = versionsToDeleteString
+                }, cancellationToken);
+            }
 
             return;
         }
