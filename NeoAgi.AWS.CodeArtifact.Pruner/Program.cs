@@ -2,35 +2,39 @@
 
 using Amazon.CodeArtifact;
 using Amazon.CodeArtifact.Model;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
-using NeoAgi.AWS.CodeArtifact.Pruner;
 using NeoAgi;
+using NeoAgi.AWS.CodeArtifact.Pruner;
 using NeoAgi.CommandLine.Exceptions;
-using NLog.Extensions.Logging;
 using NLog;
+using NLog.Extensions.Logging;
 using System;
 
 public class Program
 {
     public static void Main(string[] args)
     {
+        IHost? host = null;
         try
         {
-            CreateHostBuilder(args).Build().Run();
+            host = CreateHostBuilder(args).Build();
         }
         catch (CommandLineOptionParseException)
         {
             // Squelch the exception.  Output is captured below.
         }
+
+        if (host != null)
+            host.Run();
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
             .ConfigureAppConfiguration(configuration =>
-            {   
+            {
                 configuration.Sources.Clear();
                 configuration.AddJsonFile("appsettings.json", optional: false);
                 configuration.AddOpts<PrunerConfig>(args, "AppSettings", outputStream: Console.Out);

@@ -159,7 +159,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                         }
 
                         if (packageIteration % Config.CheckpointInterval == 0)
-                            Logger.LogInformation("Discovered {packageCount} packages on {domain}/{repository}", packageIteration, domain, repository);
+                            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
 
                         packageIteration++;
                     }
@@ -189,7 +189,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 }
             }
 
-            Logger.LogInformation("Discovered {packageCount} from {domain}/{repository}.", packages?.Count, domain, repository);
+            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packages?.Count, domain, repository);
 
             return packages ?? new List<Package>(0);
         }

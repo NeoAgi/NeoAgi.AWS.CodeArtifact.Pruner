@@ -1,27 +1,42 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<PropertyGroup>
+		<Version>1.0.0-rc</Version>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net6.0</TargetFramework>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Copyright>2021 NeoAgi, LLC</Copyright>
+		<PackageProjectUrl>https://github.com/NeoAgi/NeoAgi.AWS.CodeArtifact.Pruner</PackageProjectUrl>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<RepositoryUrl>https://github.com/NeoAgi/NeoAgi.AWS.CodeArtifact.Pruner</RepositoryUrl>
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<PackageRequireLicenseAcceptance>False</PackageRequireLicenseAcceptance>
+		<Company>NeoAgi, LLC</Company>
+		<NeutralLanguage>en-US</NeutralLanguage>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+		<Authors>NeoAgi</Authors>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<Description>Helper Process to manage lack of management features for AWS CodeArtifact</Description>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.0.120" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.0" />
-    <PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.2.1" />
-    <PackageReference Include="NLog" Version="4.7.13" />
-    <PackageReference Include="NLog.Extensions.Logging" Version="1.7.4" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.0.121" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.0" />
+		<PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.2.1" />
+		<PackageReference Include="NLog" Version="4.7.13" />
+		<PackageReference Include="NLog.Extensions.Logging" Version="1.7.4" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="nlog.config.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+	<ItemGroup>
+		<None Include="..\README.md" Pack="true" PackagePath="" />
+		<None Include="..\LICENSE" Pack="true" PackagePath="" />
+		<None Update="appsettings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="nlog.config.xml">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
 
 </Project>
