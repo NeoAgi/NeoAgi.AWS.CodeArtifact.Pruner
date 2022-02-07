@@ -27,7 +27,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         public int PageLimit { get; set; } = 50;
         [Option(FriendlyName = "Checkpoint Interval", ShortName = "i", LongName = "checkpointInterval", Description = "Number of items processed before a checkpoint information log is emitted.  Set to 0 to disable.")]
         public int CheckpointInterval { get; set; } = 100;
-        [Option(FriendlyName = "Dry Run", ShortName = "dr", LongName = "dry-run", Description = "If set to true, no changes will be commited but logs will indiate what would have occurred.  Default is false.")]
+        [Option(FriendlyName = "Dry Run", ShortName = "dr", LongName = "dry-run", Description = "If set to true, all logs will report as if changed occurred yet no modifications will be made.  Default is false.")]
         public bool DryRun { get; set; } = false;
     }
 }
