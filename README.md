@@ -1,5 +1,14 @@
 # NeoAgi.AWS.CodeArtifact.Pruner
 
+AWS CodeArtifact will often be used in two methods:
+
+1. As a pull through cache to an upstream repository
+1. As an artifact store for non-public packages
+
+The Pruner exposes a policy based way of managing the assets stored within CodeArtifact Repositories to limit the storage needed for the service, while retaining key assets for the lifespan desired.  
+
+Note: Please track [this issue](https://github.com/NeoAgi/NeoAgi.AWS.CodeArtifact.Pruner/issues/9) to add custom policies to the pruner.
+
 ## Usage
 
 Typical usage should be done from pulling a docker image  and running it:
