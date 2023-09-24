@@ -14,8 +14,8 @@ Note: Please track [this issue](https://github.com/NeoAgi/NeoAgi.AWS.CodeArtifac
 Typical usage should be done from pulling a docker image  and running it:
 
 ```
-$ docker pull public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest
-$ docker run public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --domain <domain> --repository <repository,repository> [OPTIONS]
+$ docker pull public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest
+$ docker run public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest --domain <domain> --repository <repository,repository> [OPTIONS]
 ```
 
 AWS credentials must be set prior to running.  This can be done by exposing them through docker using the `-e` (assuming $KEY_ID and $KEY_SECRET have been set):
