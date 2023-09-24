@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.NEOAGI_PUBLIC_DOCKER_ID }}
           aws-secret-access-key: ${{ secrets.NEOAGI_PUBLIC_DOCKER_KEY }}
