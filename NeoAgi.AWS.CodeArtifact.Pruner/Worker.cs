@@ -238,27 +238,22 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             {
                 Logger.LogDebug("Scheduling the deletion of {packageCount} package(s) from {domain}/{repository}", packages.Count(), domain, repository);
 
-                await Task.Run(async () =>
+                List<Task> removalTasks = new List<Task>();
+                bool cacheDirty = false;
+                foreach (Package package in packages)
                 {
-                    List<Task> removalTasks = new List<Task>();
-                    bool cacheDirty = false;
-                    foreach (Package package in packages)
-                    {
-                        await RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
-                        cacheDirty = true;
-                    }
+                    await RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
+                    cacheDirty = true;
+                }
 
-                    if (cacheFile != null && cacheDirty)
-                    {
-                        File.Delete(cacheFile);
-                        Logger.LogDebug("CacheFile Dirty.  Removing {cacheFile}", cacheFile);
-                    }
+                if (cacheFile != null && cacheDirty)
+                {
+                    File.Delete(cacheFile);
+                    Logger.LogDebug("CacheFile Dirty.  Removing {cacheFile}", cacheFile);
+                }
 
-                    Task.WaitAll(removalTasks.ToArray());
-                    Logger.LogTrace("Waiting for removal tasks to complete...");
-
-                    return Task.CompletedTask;
-                });
+                Task.WaitAll(removalTasks.ToArray());
+                Logger.LogTrace("Waiting for removal tasks to complete...");
             }
             else
             {
