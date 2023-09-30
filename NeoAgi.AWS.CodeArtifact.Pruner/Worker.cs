@@ -24,6 +24,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         private readonly IHostApplicationLifetime AppLifetime;
         private readonly PrunerConfig Config;
 
+        private readonly ConcurrentQueue<QueuedAction> ActionQueue = new ConcurrentQueue<QueuedAction>();
+
         public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IHostApplicationLifetime appLifetime)
         {
             Logger = logger;
@@ -45,19 +47,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             // Adjust settings
             string[] repositories = Config.Repository.Split(',');
             string domain = Config.Domain;
-
-            // Set our concurrency limit
-            if (Config.ConcurrencyLimit == 0 && Environment.ProcessorCount > 1)
-            {
-                Config.ConcurrencyLimit = (Environment.ProcessorCount - 1) * 2;
-                Logger.LogDebug("Found {processorCount}.  Using {threads} threads for concurency.", Environment.ProcessorCount, Config.ConcurrencyLimit);
-            }
-
-            if (Config.ConcurrencyLimit < 0)
-            {
-                Config.ConcurrencyLimit = 0;
-                Logger.LogDebug("Concurrency was set less than zero.  Disabling threaded operations.");
-            }
 
             // Ensure bounds on page limit
             if (Config.PageLimit < 1 || Config.PageLimit > 1000)
@@ -81,7 +70,9 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     ? Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json")
                     : null;
 
-                List<Package> packages = DiscoverPackages(client, cancellationToken, domain, repository, cache);
+                List<Package> packages = await DiscoverPackagesAsync(client, cancellationToken, domain, repository, cache);
+
+                await ProcessQueueAsync(client, cancellationToken, domain, repository);
 
                 IEnumerable<Package> versionsToRemove = await ApplyPolicyAsync(packages, domain, repository);
 
@@ -95,7 +86,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             return;
         }
 
-        private List<Package> DiscoverPackages(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string? cacheFile = null)
+        private async Task<List<Package>> DiscoverPackagesAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string? cacheFile = null)
         {
             ListPackagesRequest request = new ListPackagesRequest()
             {
@@ -131,8 +122,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             // Reach out to the API if we have an empty structure
             if (packages?.Count == 0)
             {
-                int concurrencyLimit = Config.ConcurrencyLimit;
-                List<Task> tasks = new List<Task>(concurrencyLimit);
                 int packageIteration = 0;
                 int iterationCount = 0;
                 int iterationMax = Config.PageLimit;
@@ -150,15 +139,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                         packages.Add(collection);
 
-                        tasks.Add(DiscoverPackageVersionsAsync(client, cancellationToken, collection, summary, domain, repository));
-
-                        // Throttle the task queue a bit
-                        if (tasks.Count > concurrencyLimit)
-                        {
-                            Logger.LogTrace("Waiting for threads...");
-                            Task t = Task.WhenAny(tasks.ToArray());
-                            tasks.Remove(t);
-                        }
+                        await DiscoverPackageVersionsAsync(client, cancellationToken, collection, summary, domain, repository);
 
                         if (packageIteration % Config.CheckpointInterval == 0)
                             Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
@@ -169,10 +150,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     request.NextToken = response.Result.NextToken;
                     iterationCount++;
                 }
-
-                // Block until we're complete
-                Logger.LogDebug("Waiting for completion...");
-                Task.WaitAll(tasks.ToArray());
 
                 if (useCache)
                 {
@@ -194,6 +171,25 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packages?.Count, domain, repository);
 
             return packages ?? new List<Package>(0);
+        }
+
+        private async Task ProcessQueueAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository)
+        {
+            while (!ActionQueue.IsEmpty)
+            {
+                QueuedAction? action;
+                if (ActionQueue.TryDequeue(out action) && action != null)
+                {
+                    if (action is QueuedActionGetPackageVersion)
+                    {
+
+                    }
+                    else if (action is QueuedActionDeleteVersion)
+                    {
+
+                    }
+                }
+            }
         }
 
         protected async Task DiscoverPackageVersionsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, Package package, PackageSummary summary, string domain, string repository)

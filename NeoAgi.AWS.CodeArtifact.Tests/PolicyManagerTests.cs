@@ -1,9 +1,9 @@
 using System;
 using NUnit.Framework;
-using NeoAgi.AWS.CodeArtifact.Pruner;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 
 namespace NeoAgi.AWS.CodeArtifact.Tests
 {
