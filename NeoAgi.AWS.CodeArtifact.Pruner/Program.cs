@@ -17,18 +17,17 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        IHost? host = null;
         try
         {
-            host = CreateHostBuilder(args).Build();
+            CreateHostBuilder(args).Build().Run();
         }
-        catch (CommandLineOptionParseException)
+        catch (CommandLineOptionParseException ex)
         {
-            // Squelch the exception.  Output is captured below.
+            foreach (var option in ex.OptionsWithErrors)
+            {
+                Console.WriteLine($"{option.Option.FriendlyName} - {option.Reason.ToString()}");
+            }
         }
-
-        if (host != null)
-            host.Run();
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>

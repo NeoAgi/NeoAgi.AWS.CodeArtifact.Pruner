@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<Version>1.0.0-rc</Version>
+		<Version>1.0.1</Version>
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net6.0</TargetFramework>
 		<ImplicitUsings>disable</ImplicitUsings>
@@ -21,11 +21,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.0.121" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.0" />
+		<PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.201.5" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
 		<PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.2.1" />
-		<PackageReference Include="NLog" Version="4.7.13" />
-		<PackageReference Include="NLog.Extensions.Logging" Version="1.7.4" />
+		<PackageReference Include="NLog" Version="5.2.4" />
+		<PackageReference Include="NLog.Extensions.Logging" Version="5.3.4" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -38,5 +38,5 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
-
+	
 </Project>
