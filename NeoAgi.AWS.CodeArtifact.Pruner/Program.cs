@@ -21,6 +21,7 @@ public class Program
         {
             CreateHostBuilder(args).Build().Run();
         }
+        catch(RaiseHelpException) { } // Supporess RaiseHelpException as a NOOP
         catch (CommandLineOptionParseException ex)
         {
             foreach (var option in ex.OptionsWithErrors)
