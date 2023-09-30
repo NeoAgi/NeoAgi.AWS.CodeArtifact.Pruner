@@ -66,17 +66,14 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             foreach (string repository in repositories)
             {
                 Logger.LogInformation("Starting discovery for {repository}/{domain}", repository, domain);
-                string? cache = (!string.IsNullOrWhiteSpace(Config.CacheLocation))
-                    ? Path.Combine(Config.CacheLocation, $"package-cache-{domain}_{repository}.json")
-                    : null;
 
-                List<Package> packages = await DiscoverPackagesAsync(client, cancellationToken, domain, repository, cache);
+                List<Package> packages = await DiscoverPackagesAsync(client, cancellationToken, domain, repository);
 
                 await ProcessQueueAsync(client, cancellationToken, domain, repository);
 
                 IEnumerable<Package> versionsToRemove = await ApplyPolicyAsync(packages, domain, repository);
 
-                await ProcessRemovalsAsync(client, cancellationToken, versionsToRemove, domain, repository, cache);
+                await ProcessRemovalsAsync(client, cancellationToken, versionsToRemove, domain, repository);
             }
 
             AppLifetime.StopApplication();
@@ -86,7 +83,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             return;
         }
 
-        private async Task<List<Package>> DiscoverPackagesAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string? cacheFile = null)
+        private async Task<List<Package>> DiscoverPackagesAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository)
         {
             ListPackagesRequest request = new ListPackagesRequest()
             {
@@ -94,30 +91,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Repository = repository
             };
 
-            bool useCache = !string.IsNullOrWhiteSpace(cacheFile);
             List<Package>? packages = new List<Package>();
-
-            if (useCache && File.Exists(cacheFile))
-            {
-                try
-                {
-                    DateTime cacheTime = File.GetLastWriteTime(cacheFile);
-                    if (cacheTime > DateTime.Now.AddHours(-1 * Config.CacheTTL))
-                    {
-                        string json = File.ReadAllText(cacheFile);
-                        packages = JsonSerializer.Deserialize<List<Package>>(json);
-                        Logger.LogDebug("API Cache created on {CacheWrittenDate} contained {count} packages.", cacheTime, packages?.Count);
-                    }
-                    else
-                    {
-                        Logger.LogInformation("Cache file at {cacheFile} is stale and wil not be used.", cacheFile);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning("Cache File could not be used. Message: {exceptionMessage}.", ex.Message);
-                }
-            }
 
             // Reach out to the API if we have an empty structure
             if (packages?.Count == 0)
@@ -150,22 +124,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     request.NextToken = response.Result.NextToken;
                     iterationCount++;
                 }
-
-                if (useCache)
-                {
-                    try
-                    {
-                        string json = JsonSerializer.Serialize(packages);
-#pragma warning disable CS8604 // Possible null reference argument.
-                        File.WriteAllText(cacheFile, json);
-#pragma warning restore CS8604 // Possible null reference argument.
-                        Logger.LogDebug("Wrote {bytes}b to {cacheLocation}", json.Length, cacheFile);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning("Cache File could not be written.  Message: {exceptionMessage}", ex.Message);
-                    }
-                }
             }
 
             Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packages?.Count, domain, repository);
@@ -195,7 +153,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         protected async Task DiscoverPackageVersionsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, Package package, PackageSummary summary, string domain, string repository)
         {
             Logger.LogDebug("Retrieving package information for {packageName} on {domain}/{repository}", summary.Package, domain, repository);
-            Task<ListPackageVersionsResponse> versions = client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
+            ListPackageVersionsResponse versions = await client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
             {
                 Domain = domain,
                 Repository = repository,
@@ -204,7 +162,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Format = summary.Format
             }, cancellationToken);
 
-            foreach (PackageVersionSummary version in versions.Result.Versions)
+            foreach (PackageVersionSummary version in versions.Versions)
             {
                 Logger.LogTrace("{packageName} - {packageVersion} - {packageStatus}", package.Name, version.Version, version.Status);
                 package.Versions.Add(new PackageVersion()
@@ -228,24 +186,16 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             return await manager.OutOfPolicyAsync(packages);
         }
 
-        public async Task ProcessRemovalsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, IEnumerable<Package> packages, string domain, string repository, string? cacheFile = null)
+        public async Task ProcessRemovalsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, IEnumerable<Package> packages, string domain, string repository)
         {
             if (packages.Count() > 0)
             {
                 Logger.LogDebug("Scheduling the deletion of {packageCount} package(s) from {domain}/{repository}", packages.Count(), domain, repository);
 
                 List<Task> removalTasks = new List<Task>();
-                bool cacheDirty = false;
                 foreach (Package package in packages)
                 {
                     await RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
-                    cacheDirty = true;
-                }
-
-                if (cacheFile != null && cacheDirty)
-                {
-                    File.Delete(cacheFile);
-                    Logger.LogDebug("CacheFile Dirty.  Removing {cacheFile}", cacheFile);
                 }
 
                 Task.WaitAll(removalTasks.ToArray());
