@@ -4,8 +4,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -196,30 +198,27 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         protected async Task DiscoverPackageVersionsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, Package package, PackageSummary summary, string domain, string repository)
         {
-            await Task.Factory.StartNew(() =>
+            Logger.LogDebug("Retrieving package information for {packageName} on {domain}/{repository}", summary.Package, domain, repository);
+            Task<ListPackageVersionsResponse> versions = client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
             {
-                Logger.LogDebug("Retrieving package information for {packageName} on {domain}/{repository}", summary.Package, domain, repository);
-                Task<ListPackageVersionsResponse> versions = client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
-                {
-                    Domain = domain,
-                    Repository = repository,
-                    Namespace = summary.Namespace,
-                    Package = summary.Package,
-                    Format = summary.Format
-                }, cancellationToken);
+                Domain = domain,
+                Repository = repository,
+                Namespace = summary.Namespace,
+                Package = summary.Package,
+                Format = summary.Format
+            }, cancellationToken);
 
-                foreach (PackageVersionSummary version in versions.Result.Versions)
+            foreach (PackageVersionSummary version in versions.Result.Versions)
+            {
+                Logger.LogTrace("{packageName} - {packageVersion} - {packageStatus}", package.Name, version.Version, version.Status);
+                package.Versions.Add(new PackageVersion()
                 {
-                    Logger.LogTrace("{packageName} - {packageVersion} - {packageStatus}", package.Name, version.Version, version.Status);
-                    package.Versions.Add(new PackageVersion()
-                    {
-                        Version = version.Version,
-                        Revision = version.Revision
-                    });
-                }
+                    Version = version.Version,
+                    Revision = version.Revision
+                });
+            }
 
-                Logger.LogDebug("Discovered {packageName} from {domain}/{repository} with {versionCount} versions.", package.Name, domain, repository, package.Versions.Count);
-            });
+            Logger.LogDebug("Discovered {packageName} from {domain}/{repository} with {versionCount} versions.", package.Name, domain, repository, package.Versions.Count);
         }
 
         public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages, string domain, string repository)
@@ -245,8 +244,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     bool cacheDirty = false;
                     foreach (Package package in packages)
                     {
-                        Task remove = RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
-
+                        await RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
                         cacheDirty = true;
                     }
 
