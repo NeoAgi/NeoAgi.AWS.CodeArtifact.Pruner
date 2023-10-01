@@ -26,6 +26,9 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         private readonly ConcurrentQueue<QueuedAction> ActionQueue = new ConcurrentQueue<QueuedAction>();
 
+        private AmazonCodeArtifactClient Client { get; set; } = new AmazonCodeArtifactClient();
+        private PolicyManager PackagePolicyManager { get; set; } = new PolicyManager();
+
         public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IHostApplicationLifetime appLifetime)
         {
             Logger = logger;
@@ -39,10 +42,16 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            AmazonCodeArtifactClient client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
+            // Initialize our Worker Variables
+            Client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
             {
                 RegionEndpoint = Amazon.RegionEndpoint.USWest2
             });
+
+            // Attach our policies to the Manager
+            PackagePolicyManager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
+            PackagePolicyManager.Policies.Add(new PersistVersionCount("*", 3));
+
 
             // Adjust settings
             string[] repositories = Config.Repository.Split(',');
@@ -67,23 +76,17 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             {
                 Logger.LogInformation("Starting discovery for {repository}/{domain}", repository, domain);
 
-                List<Package> packages = await DiscoverPackagesAsync(client, cancellationToken, domain, repository);
+                // Discover packages in the domain/repository
+                await DiscoverPackagesAsync(cancellationToken, domain, repository);
 
-                await ProcessQueueAsync(client, cancellationToken, domain, repository);
-
-                IEnumerable<Package> versionsToRemove = await ApplyPolicyAsync(packages, domain, repository);
-
-                await ProcessRemovalsAsync(client, cancellationToken, versionsToRemove, domain, repository);
+                // Process the queue
+                await ProcessQueueAsync(cancellationToken);
             }
 
             AppLifetime.StopApplication();
-
-            await Task.CompletedTask;
-
-            return;
         }
 
-        private async Task<List<Package>> DiscoverPackagesAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository)
+        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, string domain, string repository)
         {
             ListPackagesRequest request = new ListPackagesRequest()
             {
@@ -91,75 +94,66 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Repository = repository
             };
 
-            List<Package>? packages = new List<Package>();
-
-            // Reach out to the API if we have an empty structure
-            if (packages?.Count == 0)
+            int packageIteration = 0;
+            int iterationCount = 0;
+            int iterationMax = Config.PageLimit;
+            while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
             {
-                int packageIteration = 0;
-                int iterationCount = 0;
-                int iterationMax = Config.PageLimit;
-                while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
+                ListPackagesResponse response = await Client.ListPackagesAsync(request, cancellationToken);
+
+                foreach (PackageSummary summary in response.Packages)
                 {
-                    Task<ListPackagesResponse> response = client.ListPackagesAsync(request, cancellationToken);
-
-                    foreach (PackageSummary summary in response.Result.Packages)
+                    ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package()
                     {
-                        Package collection = new Package()
-                        {
-                            Name = summary.Package,
-                            Format = summary.Format.Value
-                        };
+                        Name = summary.Package,
+                        Format = summary.Format.Value,
+                        Namespace = summary.Namespace
+                    }));
 
-                        packages.Add(collection);
+                    if (packageIteration % Config.CheckpointInterval == 0)
+                        Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
 
-                        await DiscoverPackageVersionsAsync(client, cancellationToken, collection, summary, domain, repository);
-
-                        if (packageIteration % Config.CheckpointInterval == 0)
-                            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
-
-                        packageIteration++;
-                    }
-
-                    request.NextToken = response.Result.NextToken;
-                    iterationCount++;
+                    packageIteration++;
                 }
+
+                request.NextToken = response.NextToken;
+                iterationCount++;
             }
 
-            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packages?.Count, domain, repository);
-
-            return packages ?? new List<Package>(0);
+            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packageIteration, domain, repository);
         }
 
-        private async Task ProcessQueueAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository)
+        internal async Task ProcessQueueAsync(CancellationToken cancellationToken)
         {
             while (!ActionQueue.IsEmpty)
             {
                 QueuedAction? action;
                 if (ActionQueue.TryDequeue(out action) && action != null)
                 {
-                    if (action is QueuedActionGetPackageVersion)
+                    if (action is QueuedActionGetPackageVersions)
                     {
-
+                        await DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action);
                     }
                     else if (action is QueuedActionDeleteVersion)
                     {
-
+                        await RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action);
                     }
                 }
             }
         }
 
-        protected async Task DiscoverPackageVersionsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, Package package, PackageSummary summary, string domain, string repository)
+        internal async Task DiscoverPackageVersionsAsync(CancellationToken cancellationToken, QueuedActionGetPackageVersions action)
         {
-            Logger.LogDebug("Retrieving package information for {packageName} on {domain}/{repository}", summary.Package, domain, repository);
-            ListPackageVersionsResponse versions = await client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
+            Package package = action.Package;
+
+            Logger.LogDebug("Retrieving package information for {packageName} on {domain}/{repository}", package.Name, package.Domain, package.Repository);
+            ListPackageVersionsResponse versions = await Client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
             {
-                Domain = domain,
-                Repository = repository,
-                Namespace = summary.Namespace,
-                Package = summary.Package,
-                Format = summary.Format
+                Domain = package.Domain,
+                Repository = package.Repository,
+                Namespace = package.Namespace,
+                Package = package.Name,
+                Format = package.Format
             }, cancellationToken);
 
             foreach (PackageVersionSummary version in versions.Versions)
@@ -172,62 +166,41 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 });
             }
 
-            Logger.LogDebug("Discovered {packageName} from {domain}/{repository} with {versionCount} versions.", package.Name, domain, repository, package.Versions.Count);
+            // Apply out policy
+            var versionsToRemove = PackagePolicyManager.VersionsOutOfPolicy(package);
+
+            Logger.LogDebug("Discovered {packageName} from {domain}/{repository} with {versionCount} versions.  {versionsOutOfPolicy} are out of policy."
+                , package.Name, package.Domain, package.Repository, package.Versions.Count, versionsToRemove.Count());
+
+            // If we have versions ouf of policy, enqueue the removal
+            if(versionsToRemove.Count() > 0)
+                ActionQueue.Enqueue(new QueuedActionDeleteVersion(package, versionsToRemove));
         }
 
-        public async Task<IEnumerable<Package>> ApplyPolicyAsync(List<Package> packages, string domain, string repository)
+        internal async Task RemovePackageVersionAsync(CancellationToken cancellationToken, QueuedActionDeleteVersion action)
         {
-            PolicyManager<Package> manager = new PolicyManager<Package>();
-            manager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
-            manager.Policies.Add(new PersistVersionCount("*", 3));
+            Package package = action.Package;
+            IEnumerable<PackageVersion> versions = action.Versions;
 
-            Logger.LogInformation("Applying {policyCount} policies across {packageCount} packages on {domain}/{repository}", manager.Policies.Count, packages.Count, domain, repository);
-
-            return await manager.OutOfPolicyAsync(packages);
-        }
-
-        public async Task ProcessRemovalsAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, IEnumerable<Package> packages, string domain, string repository)
-        {
-            if (packages.Count() > 0)
-            {
-                Logger.LogDebug("Scheduling the deletion of {packageCount} package(s) from {domain}/{repository}", packages.Count(), domain, repository);
-
-                List<Task> removalTasks = new List<Task>();
-                foreach (Package package in packages)
-                {
-                    await RemovePackageVersionAsync(client, cancellationToken, domain, repository, package.Name, package.Format, package.Versions);
-                }
-
-                Task.WaitAll(removalTasks.ToArray());
-                Logger.LogTrace("Waiting for removal tasks to complete...");
-            }
-            else
-            {
-                Logger.LogInformation("No packages found for deletion on {domain}/{repository}.", domain, repository);
-                return;
-            }
-        }
-
-        public async Task RemovePackageVersionAsync(AmazonCodeArtifactClient client, CancellationToken cancellationToken, string domain, string repository, string packageName, string packageFormat, List<PackageVersion> versionsToDelete)
-        {
-            Logger.LogInformation("Scheduling the deletion of {packageName} from {domain}/{repository} version(s): {versionsToDelete}.", packageName, domain, repository, string.Join(", ", versionsToDelete.Select(x => x.Version)));
+            Logger.LogInformation("Deleting {packageName}@{versionsToDelete} from {domain}/{repository}."
+                , package.Name, string.Join(", ", versions.Select(x => x.Version)), package.Domain, package.Repository);
 
             if (!Config.DryRun)
             {
-                List<string> versionsToDeleteString = new List<string>();
-                foreach (PackageVersion version in versionsToDelete)
+                List<string> versionsToDelete = new List<string>();
+                foreach(var version in versions)
                 {
-                    versionsToDeleteString.Add(version.Version);
+                    versionsToDelete.Add(version.Version);
                 }
 
-                await client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
+                await Client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
                 {
-                    Domain = domain,
-                    // Namespace = package.Namespace,
-                    Package = packageName,
-                    Repository = repository,
-                    Format = packageFormat,
-                    Versions = versionsToDeleteString
+                    Domain = package.Domain,
+                    Namespace = package.Namespace,
+                    Package = package.Name,
+                    Repository = package.Repository,
+                    Format = package.Format,
+                    Versions = versionsToDelete
                 }, cancellationToken);
             }
 

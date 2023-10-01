@@ -7,7 +7,7 @@ using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
 {
-    public class PolicyManager<T> where T : Package, new()
+    public class PolicyManager
     {
         public List<IPolicy> Policies { get; set; } = new List<IPolicy>();
 
@@ -16,53 +16,37 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
             
         }
 
-        public async Task<IEnumerable<T>> OutOfPolicyAsync(List<T> packages)
+        public IEnumerable<PackageVersion> VersionsOutOfPolicy(Package package)
         {
-            return await Task<IEnumerable<T>>.Factory.StartNew(() =>
+            List<PackageVersion> versionsOutOfPolicy = new List<PackageVersion>();
+
+            foreach (IPolicy policy in Policies)
             {
-                List<T> outOfPolicy = new List<T>();
-
-                foreach (Package package in packages)
+                // Do we have a match in this policy?
+                if (policy.IsMatch(package))
                 {
-                    foreach (IPolicy policy in Policies)
+                    List<PackageVersion> versionsInPolicy = new List<PackageVersion>(policy.Match(package));
+                    foreach (PackageVersion version in package.Versions)
                     {
-                        if (policy.IsMatch(package))
+                        bool isFound = false;
+                        foreach (PackageVersion inPolicyVersion in versionsInPolicy)
                         {
-                            T pkg = new T
+                            if (inPolicyVersion.Version.Equals(version.Version, StringComparison.OrdinalIgnoreCase) && inPolicyVersion.Name.Equals(version.Name, StringComparison.OrdinalIgnoreCase))
                             {
-                                Name = package.Name,
-                                Format = package.Format,
-                                Namespace = package.Namespace
-                            };
-
-                            List<PackageVersion> versionsInPolicy = new List<PackageVersion>(policy.Match(package));
-                            foreach (PackageVersion version in package.Versions)
-                            {
-                                bool isFound = false;
-                                foreach (PackageVersion inPolicyVersion in versionsInPolicy)
-                                {
-                                    if (inPolicyVersion.Version.Equals(version.Version, StringComparison.OrdinalIgnoreCase) && inPolicyVersion.Name.Equals(version.Name, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        isFound = true;
-                                        break;
-                                    }
-                                }
-
-                                if (!isFound)
-                                    pkg.Versions.Add(version);
+                                isFound = true;
+                                break;
                             }
-
-                            if (pkg.Versions.Count > 0)
-                                outOfPolicy.Add(pkg);
-
-                            break;
                         }
+
+                        if (!isFound)
+                            versionsOutOfPolicy.Add(version);
                     }
+
+                    break;
                 }
+            }
 
-                return outOfPolicy;
-            });
+            return versionsOutOfPolicy;
         }
-
     }
 }

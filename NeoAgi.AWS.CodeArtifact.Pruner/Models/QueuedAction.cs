@@ -8,5 +8,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Models
 {
     internal class QueuedAction
     {
+        public QueuedAction() { }
     }
 }

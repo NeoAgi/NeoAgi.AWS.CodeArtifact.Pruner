@@ -6,15 +6,13 @@ using System.Threading.Tasks;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner.Models
 {
-    internal class QueuedActionDeleteVersion : QueuedAction
+    internal class QueuedActionGetPackageVersions : QueuedAction
     {
         public Package Package { get; set; }
-        public IEnumerable<PackageVersion> Versions { get; set; }
 
-        public QueuedActionDeleteVersion(Package package, IEnumerable<PackageVersion> versions)
+        public QueuedActionGetPackageVersions(Package package) 
         {
             Package = package;
-            Versions = versions;
         }
     }
 }
