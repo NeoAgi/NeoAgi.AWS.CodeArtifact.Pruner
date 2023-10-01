@@ -16,11 +16,18 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Models
         public string Repository { get; set; } = string.Empty;
         public List<PackageVersion> Versions { get; set; } = new List<PackageVersion>();
 
-        public Package() { }
-
-        public Package(PackageSummary summary)
+        public Package(string domain, string repository) 
         {
-            
+            Domain = domain;
+            Repository = repository;
+        }
+
+        public Package(string domain, string repository, PackageSummary summary)
+            : this(domain, repository)
+        {
+            Name = summary.Package;
+            Format = summary.Format.Value;
+            Namespace = summary.Namespace;
         }
     }
 }

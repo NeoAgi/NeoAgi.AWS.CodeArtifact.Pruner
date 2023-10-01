@@ -26,12 +26,15 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         private readonly ConcurrentQueue<QueuedAction> ActionQueue = new ConcurrentQueue<QueuedAction>();
 
-        private AmazonCodeArtifactClient Client { get; set; } = new AmazonCodeArtifactClient();
+        private AmazonCodeArtifactClient Client { get; set; }
         private PolicyManager PackagePolicyManager { get; set; } = new PolicyManager();
 
-        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, IHostApplicationLifetime appLifetime)
+        private int TPS = 0;
+
+        public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, AmazonCodeArtifactClient codeArtifactClient, IHostApplicationLifetime appLifetime)
         {
             Logger = logger;
+            Client = codeArtifactClient;
             AppLifetime = appLifetime;
             Config = config.Value;
 
@@ -42,12 +45,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            // Initialize our Worker Variables
-            Client = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
-            {
-                RegionEndpoint = Amazon.RegionEndpoint.USWest2
-            });
-
             // Attach our policies to the Manager
             PackagePolicyManager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
             PackagePolicyManager.Policies.Add(new PersistVersionCount("*", 3));
@@ -103,12 +100,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                 foreach (PackageSummary summary in response.Packages)
                 {
-                    ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package()
-                    {
-                        Name = summary.Package,
-                        Format = summary.Format.Value,
-                        Namespace = summary.Namespace
-                    }));
+                    ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package(domain, repository, summary)));
 
                     if (packageIteration % Config.CheckpointInterval == 0)
                         Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
@@ -125,6 +117,12 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         internal async Task ProcessQueueAsync(CancellationToken cancellationToken)
         {
+            // Start a thread to clear out our TPS counter
+            _ = Task.Factory.StartNew(() => StartTPSCounter(cancellationToken));
+
+            int totalTasks = 10;
+            List<Task> tasks = new List<Task>(totalTasks);
+
             while (!ActionQueue.IsEmpty)
             {
                 QueuedAction? action;
@@ -132,13 +130,43 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 {
                     if (action is QueuedActionGetPackageVersions)
                     {
-                        await DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action);
+                        tasks.Add(DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action));
+                        TPS++;
                     }
                     else if (action is QueuedActionDeleteVersion)
                     {
-                        await RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action);
+                        tasks.Add(RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action));
+                        TPS++;
+                    }
+
+                    // See if we're over our TPS
+                    if (TPS >= 20)
+                    {
+                        Logger.LogWarning("Reached TPS of 20... blocking... ");
+                        Task.Delay(1000).Wait();
+                    }
+
+                    // Stop here and see how many transactions are currently running
+                    if (tasks.Count >= totalTasks)
+                    {
+                        Task<Task> finished = Task.WhenAny(tasks);
+                        finished.Wait();
+
+                        tasks.Remove(finished);
                     }
                 }
+            }
+        }
+
+        internal async Task StartTPSCounter(CancellationToken cancellationToken)
+        {
+            for (int i = 0; i < int.MaxValue; i++)
+            {
+                Logger.LogWarning("TPS is {tps}", TPS);
+                TPS = 0;
+
+                Task timeout = Task.Delay(1000);
+                timeout.Wait();
             }
         }
 
@@ -173,7 +201,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 , package.Name, package.Domain, package.Repository, package.Versions.Count, versionsToRemove.Count());
 
             // If we have versions ouf of policy, enqueue the removal
-            if(versionsToRemove.Count() > 0)
+            if (versionsToRemove.Count() > 0)
                 ActionQueue.Enqueue(new QueuedActionDeleteVersion(package, versionsToRemove));
         }
 
@@ -188,7 +216,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             if (!Config.DryRun)
             {
                 List<string> versionsToDelete = new List<string>();
-                foreach(var version in versions)
+                foreach (var version in versions)
                 {
                     versionsToDelete.Add(version.Version);
                 }
@@ -207,9 +235,9 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             return;
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
-            return Task.CompletedTask;
+            await Task.CompletedTask;
         }
 
         private void OnStarted() { }

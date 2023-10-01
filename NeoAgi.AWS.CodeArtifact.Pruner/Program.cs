@@ -48,6 +48,13 @@ public class Program
             })
             .ConfigureServices((hostContext, services) =>
             {
+                // Configure the Amazon Clients
+                var codeArtifactClient = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
+                {
+                    RegionEndpoint = Amazon.RegionEndpoint.USWest2
+                });
+
+                services.AddSingleton<AmazonCodeArtifactClient>(codeArtifactClient);
                 services.Configure<PrunerConfig>(hostContext.Configuration.GetSection("AppSettings"));
                 services.AddHostedService<Worker>();
             });

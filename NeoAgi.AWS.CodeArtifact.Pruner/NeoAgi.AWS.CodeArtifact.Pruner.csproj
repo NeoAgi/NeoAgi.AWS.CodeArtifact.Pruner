@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<Version>1.0.1</Version>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net7.0</TargetFramework>
 		<ImplicitUsings>disable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<Copyright>2021 NeoAgi, LLC</Copyright>
@@ -22,6 +22,8 @@
 
 	<ItemGroup>
 		<PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.201.5" />
+		<PackageReference Include="AWSSDK.SSO" Version="3.7.200.48" />
+		<PackageReference Include="AWSSDK.SSOOIDC" Version="3.7.201.5" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
 		<PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.2.1" />
 		<PackageReference Include="NLog" Version="5.2.4" />
