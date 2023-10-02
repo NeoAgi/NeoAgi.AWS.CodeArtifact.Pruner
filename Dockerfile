@@ -1,5 +1,5 @@
 ﻿# Pull our base image
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
 
 COPY . /src/app
 WORKDIR /src/app

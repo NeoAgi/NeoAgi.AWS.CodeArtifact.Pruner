@@ -6,8 +6,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using NeoAgi;
 using NeoAgi.AWS.CodeArtifact.Pruner;
+using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 using NeoAgi.CommandLine.Exceptions;
 using NLog;
 using NLog.Extensions.Logging;
@@ -17,18 +17,18 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        IHost? host = null;
         try
         {
-            host = CreateHostBuilder(args).Build();
+            CreateHostBuilder(args).Build().Run();
         }
-        catch (CommandLineOptionParseException)
+        catch(RaiseHelpException) { } // Supporess RaiseHelpException as a NOOP
+        catch (CommandLineOptionParseException ex)
         {
-            // Squelch the exception.  Output is captured below.
+            foreach (var option in ex.OptionsWithErrors)
+            {
+                Console.WriteLine($"{option.Option.FriendlyName} - {option.Reason.ToString()}");
+            }
         }
-
-        if (host != null)
-            host.Run();
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
@@ -48,6 +48,13 @@ public class Program
             })
             .ConfigureServices((hostContext, services) =>
             {
+                // Configure the Amazon Clients
+                var codeArtifactClient = new AmazonCodeArtifactClient(new AmazonCodeArtifactConfig()
+                {
+                    RegionEndpoint = Amazon.RegionEndpoint.USWest2
+                });
+
+                services.AddSingleton<AmazonCodeArtifactClient>(codeArtifactClient);
                 services.Configure<PrunerConfig>(hostContext.Configuration.GetSection("AppSettings"));
                 services.AddHostedService<Worker>();
             });

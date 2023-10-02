@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace NeoAgi
+namespace NeoAgi.AWS.CodeArtifact.Pruner.Models
 {
     /// <summary>
     /// Enum Extensions and Utilities
@@ -17,9 +17,9 @@ namespace NeoAgi
         /// <param name="defaultVal">Enum to search within</param>
         /// <param name="caseInsensitve">Perform parsing case insensitive</param>
         /// <returns></returns>
-        public static T ParseOrDefault(string val, T defaultVal, bool caseInsensitve = true)
+        public static T ParseOrDefault(string? val, T defaultVal, bool caseInsensitve = true)
         {
-            if (!Enum.TryParse<T>(val, caseInsensitve, out T parsed))
+            if (!Enum.TryParse(val, caseInsensitve, out T parsed))
             {
                 parsed = defaultVal;
             }

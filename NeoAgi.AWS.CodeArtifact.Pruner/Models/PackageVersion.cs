@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace NeoAgi.AWS.CodeArtifact.Pruner
+namespace NeoAgi.AWS.CodeArtifact.Pruner.Models
 {
     public class PackageVersion
     {
