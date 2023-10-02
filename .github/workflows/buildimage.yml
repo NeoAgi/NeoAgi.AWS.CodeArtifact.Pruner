@@ -23,10 +23,10 @@ jobs:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
-      - name: Notify
-        uses: neoagi/actions-slack-notify@v1
-        with:
-            action-message: "${{ github.ref_name }} with SHA of ${{ github.sha }} Starting Build"
+      #- name: Notify
+      #  uses: neoagi/actions-slack-notify@v1
+      #  with:
+      #      action-message: "${{ github.ref_name }} with SHA of ${{ github.sha }} Starting Build"
 
       - name: Init Workflow Variables
         run: |
@@ -69,6 +69,6 @@ jobs:
           docker push ${{ secrets.PUBLIC_DOCKER_REPOSITORY }}/neoagi.aws.codeartifact.pruner:latest
         shell: bash
 
-      - name: Notify
-        uses: neoagi/actions-slack-notify@v1
-        if: always()
+      #- name: Notify
+      #  uses: neoagi/actions-slack-notify@v1
+      #  if: always()
