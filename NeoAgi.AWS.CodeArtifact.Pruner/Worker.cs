@@ -1,18 +1,13 @@
 ﻿using Amazon.CodeArtifact;
 using Amazon.CodeArtifact.Model;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
-using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -120,7 +115,10 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             // Start a thread to clear out our TPS counter
             _ = Task.Factory.StartNew(() => StartTPSCounter(cancellationToken));
 
+            int tps = 20;
+            int backoffTps = 0;
             int totalTasks = 10;
+            int tpsRatio = (int)(1000 / tps);
             List<Task> tasks = new List<Task>(totalTasks);
 
             while (!ActionQueue.IsEmpty)
@@ -131,19 +129,27 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     if (action is QueuedActionGetPackageVersions)
                     {
                         tasks.Add(DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action));
-                        TPS++;
+                        TPS++; backoffTps++;
                     }
                     else if (action is QueuedActionDeleteVersion)
                     {
                         tasks.Add(RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action));
-                        TPS++;
+                        TPS++; backoffTps++;
+                    }
+
+                    // If we've reached our TPS counter, ramp up out speed
+                    if (backoffTps <= tps)
+                    {
+                        Logger.LogDebug("Throttling TPS rampup.  Waiting {tpsRampTime}ms", tpsRatio);
+                        Task.Delay(tpsRatio).Wait();
                     }
 
                     // See if we're over our TPS
-                    if (TPS >= 20)
+                    if (TPS >= tps)
                     {
-                        Logger.LogWarning("Reached TPS of 20... blocking... ");
+                        Logger.LogDebug("Maximum TPS reached.  Waiting...");
                         Task.Delay(1000).Wait();
+                        backoffTps = 0;
                     }
 
                     // Stop here and see how many transactions are currently running
