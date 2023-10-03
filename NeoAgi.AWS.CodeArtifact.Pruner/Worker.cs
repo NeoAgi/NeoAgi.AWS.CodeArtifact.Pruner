@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,6 +26,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         private PolicyManager PackagePolicyManager { get; set; } = new PolicyManager();
 
         private int TPS = 0;
+        private Dictionary<string, int> TotalPackages = new Dictionary<string, int>();
 
         public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, AmazonCodeArtifactClient codeArtifactClient, IHostApplicationLifetime appLifetime)
         {
@@ -70,44 +72,73 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                 // Discover packages in the domain/repository
                 await DiscoverPackagesAsync(cancellationToken, domain, repository);
-
-                // Process the queue
-                await ProcessQueueAsync(cancellationToken);
             }
+
+            // Process the queue
+            Task t = ProcessQueueAsync(cancellationToken);
+            t.Wait();
 
             AppLifetime.StopApplication();
         }
 
-        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, string domain, string repository)
+        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, QueuedActionDiscoverPackages action)
         {
+            await DiscoverPackagesAsync(cancellationToken, action.Domain, action.Repository, action.PageIterationCount, action.NextToken);
+        }
+
+        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, string domain, string repository, int pageIterationCount = 0, string? nextToken = null)
+        {
+            if (pageIterationCount > Config.PageLimit)
+            {
+                Logger.LogWarning("Reached the maxiumum number of pages.  Increase '--pageLimit' beyond {pageLimit}.", Config.PageLimit);
+                return;
+            }
+
+            if (pageIterationCount != 0 && string.IsNullOrEmpty(nextToken))
+            {
+                Logger.LogWarning("Received an empty pageToken with a non-zero page count.  Exiting discovery loop.");
+                return;
+            }
+
+            // Continue with the discovery
+            Logger.LogInformation("Retriving next page of packages.  Page count is {pageCount}.", pageIterationCount);
+
             ListPackagesRequest request = new ListPackagesRequest()
             {
                 Domain = domain,
                 Repository = repository
             };
 
-            int packageIteration = 0;
-            int iterationCount = 0;
-            int iterationMax = Config.PageLimit;
-            while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
+            if (nextToken != null)
+                request.NextToken = nextToken;
+
+            string packageKey = domain + repository;
+            if (!TotalPackages.ContainsKey(packageKey))
+                TotalPackages[packageKey] = 0;
+
+            int packageIteration = TotalPackages[packageKey];
+            ListPackagesResponse response = await Client.ListPackagesAsync(request, cancellationToken);
+
+            foreach (PackageSummary summary in response.Packages)
             {
-                ListPackagesResponse response = await Client.ListPackagesAsync(request, cancellationToken);
+                ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package(domain, repository, summary)));
 
-                foreach (PackageSummary summary in response.Packages)
-                {
-                    ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package(domain, repository, summary)));
+                if (packageIteration % Config.CheckpointInterval == 0)
+                    Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
 
-                    if (packageIteration % Config.CheckpointInterval == 0)
-                        Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
-
-                    packageIteration++;
-                }
-
-                request.NextToken = response.NextToken;
-                iterationCount++;
+                packageIteration++;
             }
 
-            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packageIteration, domain, repository);
+            TotalPackages[packageKey] = packageIteration;
+
+            if (response.NextToken != null)
+            {
+                pageIterationCount++;
+                Logger.LogInformation("Next Token found.  Scheduling call of page {pageCount}.", pageIterationCount);
+                ActionQueue.Enqueue(new QueuedActionDiscoverPackages(domain, repository, pageIterationCount, response.NextToken));
+            }
+
+            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository} on page {pageItteration}.", packageIteration, domain, repository, pageIterationCount);
         }
 
         internal async Task ProcessQueueAsync(CancellationToken cancellationToken)
@@ -135,6 +166,10 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     {
                         tasks.Add(RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action));
                         TPS++; backoffTps++;
+                    }
+                    else if (action is QueuedActionDiscoverPackages)
+                    {
+                        tasks.Add(DiscoverPackagesAsync(cancellationToken, (QueuedActionDiscoverPackages)action));
                     }
 
                     // If we've reached our TPS counter, ramp up out speed
@@ -168,7 +203,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             for (int i = 0; i < int.MaxValue; i++)
             {
-                Logger.LogWarning("TPS is {tps}", TPS);
+                Logger.LogWarning("TPS is {tps}.  Nonce is {nonce}", TPS, DateTime.Now.Ticks);
                 TPS = 0;
 
                 Task timeout = Task.Delay(1000);
