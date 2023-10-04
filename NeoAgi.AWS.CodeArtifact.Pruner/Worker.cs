@@ -60,6 +60,20 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Config.PageLimit = 50;
             }
 
+            // Ensure we have a positive number for Parallism
+            if(Config.Parallalism < 1)
+            {
+                Logger.LogWarning("Parallelism must be set to a positive integer.  Received {parallismValue}.  Setting to 1 (disables threading).", Config.Parallalism);
+                Config.Parallalism = 1;
+            }
+
+            // Ensure our TPS is a positive number
+            if(Config.MaxTransactionsPerSecond < 1)
+            {
+                Logger.LogWarning("Maximum Transactions Per Second must be a positive number.  Received {tpsValue}.  Disabling throttling.", Config.MaxTransactionsPerSecond);
+                Config.MaxTransactionsPerSecond = int.MaxValue;
+            }
+
             // Disable our checkpoint value if indicated
             if (Config.CheckpointInterval == 0)
                 Config.CheckpointInterval = int.MaxValue;
@@ -161,9 +175,9 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             _ = Task.Factory.StartNew(() => StartTPSCounter(cancellationToken));
 
             int totalActionCount = 0;
-            int tps = 20;
+            int tps = Config.MaxTransactionsPerSecond;
             int backoffTps = 0;
-            int totalTasks = 10;
+            int totalTasks = Config.Parallalism;
             int tpsRatio = (int)(1000 / tps);
             List<Task> tasks = new List<Task>(totalTasks);
             Stopwatch sw = Stopwatch.StartNew();
@@ -219,7 +233,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     // Stop here and see how many transactions are currently running
                     if (tasks.Count >= totalTasks)
                     {
-                        Task<Task> finished = Task.WhenAny(tasks);
+                        Task finished = await Task.WhenAny(tasks);
                         finished.Wait();
 
                         tasks.Remove(finished);
@@ -229,7 +243,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                     if (totalActionCount % Config.CheckpointInterval == 0)
                     {
-                        Logger.LogWarning("ActionQueue has processed {actionCount} in {durration} seconds.  {queueDepth} items are queued. {deadQueueDepth} dead actions encountered."
+                        Logger.LogInformation("ActionQueue has processed {actionCount} in {durration} seconds.  {queueDepth} items are queued. {deadQueueDepth} dead actions encountered."
                             , totalActionCount, Math.Round((decimal)(sw.ElapsedMilliseconds) / 1000, 2), ActionQueue.Count, DeadActionQueue.Count);
                     }
                 }

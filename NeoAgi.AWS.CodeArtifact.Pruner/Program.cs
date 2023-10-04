@@ -44,6 +44,7 @@ public class Program
                 logBuilder.ClearProviders();
                 logBuilder.SetMinimumLevel(Enum<Microsoft.Extensions.Logging.LogLevel>.ParseOrDefault(
                     hostContext.Configuration.GetValue<string>("AppSettings:LogLevel"), Microsoft.Extensions.Logging.LogLevel.Information));
+
                 logBuilder.AddNLog("nlog.config.xml");
             })
             .ConfigureServices((hostContext, services) =>
