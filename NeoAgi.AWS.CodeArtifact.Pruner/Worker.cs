@@ -1,6 +1,5 @@
 ﻿using Amazon.CodeArtifact;
 using Amazon.CodeArtifact.Model;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,10 +8,8 @@ using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
+using System.Diagnostics;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,11 +22,13 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         private readonly PrunerConfig Config;
 
         private readonly ConcurrentQueue<QueuedAction> ActionQueue = new ConcurrentQueue<QueuedAction>();
+        private readonly ConcurrentQueue<QueuedAction> DeadActionQueue = new ConcurrentQueue<QueuedAction>();
 
         private AmazonCodeArtifactClient Client { get; set; }
         private PolicyManager PackagePolicyManager { get; set; } = new PolicyManager();
 
         private int TPS = 0;
+        private Dictionary<string, int> TotalPackages = new Dictionary<string, int>();
 
         public Worker(ILogger<Worker> logger, IOptions<PrunerConfig> config, AmazonCodeArtifactClient codeArtifactClient, IHostApplicationLifetime appLifetime)
         {
@@ -61,6 +60,20 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 Config.PageLimit = 50;
             }
 
+            // Ensure we have a positive number for Parallism
+            if(Config.Parallalism < 1)
+            {
+                Logger.LogWarning("Parallelism must be set to a positive integer.  Received {parallismValue}.  Setting to 1 (disables threading).", Config.Parallalism);
+                Config.Parallalism = 1;
+            }
+
+            // Ensure our TPS is a positive number
+            if(Config.MaxTransactionsPerSecond < 1)
+            {
+                Logger.LogWarning("Maximum Transactions Per Second must be a positive number.  Received {tpsValue}.  Disabling throttling.", Config.MaxTransactionsPerSecond);
+                Config.MaxTransactionsPerSecond = int.MaxValue;
+            }
+
             // Disable our checkpoint value if indicated
             if (Config.CheckpointInterval == 0)
                 Config.CheckpointInterval = int.MaxValue;
@@ -75,44 +88,85 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
                 // Discover packages in the domain/repository
                 await DiscoverPackagesAsync(cancellationToken, domain, repository);
-
-                // Process the queue
-                await ProcessQueueAsync(cancellationToken);
             }
+
+            // Process the queue
+            Task t = ProcessQueueAsync(cancellationToken);
+            t.Wait();
 
             AppLifetime.StopApplication();
         }
 
-        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, string domain, string repository)
+        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, QueuedActionDiscoverPackages action)
         {
+            try
+            {
+                await DiscoverPackagesAsync(cancellationToken, action.Domain, action.Repository, action.PageIterationCount, action.NextToken);
+            }
+            catch (ThrottlingException)
+            {
+                Logger.LogWarning("[{actionId}] Throttled by Upstream Service.  Requeuing package discovery for {domain}/{repository}."
+                    , action.ActionID, action.Domain, action.Repository);
+
+                // Requeue the attempt
+                ActionQueue.Enqueue(action);
+            }
+        }
+
+        internal async Task DiscoverPackagesAsync(CancellationToken cancellationToken, string domain, string repository, int pageIterationCount = 0, string? nextToken = null)
+        {
+            if (pageIterationCount > Config.PageLimit)
+            {
+                Logger.LogWarning("Reached the maxiumum number of pages.  Increase '--pageLimit' beyond {pageLimit}.", Config.PageLimit);
+                return;
+            }
+
+            if (pageIterationCount != 0 && string.IsNullOrEmpty(nextToken))
+            {
+                Logger.LogError("Received an empty pageToken with a non-zero page count.  Exiting discovery action.");
+                return;
+            }
+
+            // Continue with the discovery
+            Logger.LogInformation("Retriving next page of packages.  Page count is {pageCount}.", pageIterationCount);
+
             ListPackagesRequest request = new ListPackagesRequest()
             {
                 Domain = domain,
                 Repository = repository
             };
 
-            int packageIteration = 0;
-            int iterationCount = 0;
-            int iterationMax = Config.PageLimit;
-            while (iterationCount == 0 || (request.NextToken != null && iterationCount < iterationMax))
+            if (nextToken != null)
+                request.NextToken = nextToken;
+
+            string packageKey = domain + repository;
+            if (!TotalPackages.ContainsKey(packageKey))
+                TotalPackages[packageKey] = 0;
+
+            int packageIteration = TotalPackages[packageKey];
+
+            ListPackagesResponse response = await Client.ListPackagesAsync(request, cancellationToken);
+
+            foreach (PackageSummary summary in response.Packages)
             {
-                ListPackagesResponse response = await Client.ListPackagesAsync(request, cancellationToken);
+                ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package(domain, repository, summary)));
 
-                foreach (PackageSummary summary in response.Packages)
-                {
-                    ActionQueue.Enqueue(new QueuedActionGetPackageVersions(new Package(domain, repository, summary)));
+                if (packageIteration % Config.CheckpointInterval == 0)
+                    Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
 
-                    if (packageIteration % Config.CheckpointInterval == 0)
-                        Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}", packageIteration, domain, repository);
-
-                    packageIteration++;
-                }
-
-                request.NextToken = response.NextToken;
-                iterationCount++;
+                packageIteration++;
             }
 
-            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository}.", packageIteration, domain, repository);
+            TotalPackages[packageKey] = packageIteration;
+
+            if (response.NextToken != null)
+            {
+                pageIterationCount++;
+                Logger.LogInformation("Next Token found.  Scheduling call of page {pageCount}.", pageIterationCount);
+                ActionQueue.Enqueue(new QueuedActionDiscoverPackages(domain, repository, pageIterationCount, response.NextToken));
+            }
+
+            Logger.LogInformation("Discovered {packageCount} packages from {domain}/{repository} on page {pageItteration}.", packageIteration, domain, repository, pageIterationCount);
         }
 
         internal async Task ProcessQueueAsync(CancellationToken cancellationToken)
@@ -120,39 +174,77 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             // Start a thread to clear out our TPS counter
             _ = Task.Factory.StartNew(() => StartTPSCounter(cancellationToken));
 
-            int totalTasks = 10;
+            int totalActionCount = 0;
+            int tps = Config.MaxTransactionsPerSecond;
+            int backoffTps = 0;
+            int totalTasks = Config.Parallalism;
+            int tpsRatio = (int)(1000 / tps);
             List<Task> tasks = new List<Task>(totalTasks);
+            Stopwatch sw = Stopwatch.StartNew();
 
             while (!ActionQueue.IsEmpty)
             {
                 QueuedAction? action;
                 if (ActionQueue.TryDequeue(out action) && action != null)
                 {
+                    // Before Processing verify our re-attempt queue
+                    if (action.AttemptedCount > 2)
+                    {
+                        Logger.LogWarning("[{actionId}] Attempted action count exhausted.  Will not re-attempt.", action.ActionID);
+                        DeadActionQueue.Enqueue(action);
+                        continue;
+                    }
+
+                    // Route our action to the correct handler
                     if (action is QueuedActionGetPackageVersions)
                     {
                         tasks.Add(DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action));
-                        TPS++;
                     }
                     else if (action is QueuedActionDeleteVersion)
                     {
                         tasks.Add(RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action));
-                        TPS++;
+                    }
+                    else if (action is QueuedActionDiscoverPackages)
+                    {
+                        tasks.Add(DiscoverPackagesAsync(cancellationToken, (QueuedActionDiscoverPackages)action));
+                    }
+
+                    // Increment our TPS and Backoff Counters
+                    TPS++; backoffTps++;
+
+                    // Increment our attempted value
+                    action.IncreaseAttempted();
+
+                    // If we've reached our TPS counter, ramp up out speed
+                    if (backoffTps <= tps)
+                    {
+                        Logger.LogTrace("Throttling TPS rampup.  Waiting {tpsRampTime}ms", tpsRatio);
+                        Task.Delay(tpsRatio).Wait();
                     }
 
                     // See if we're over our TPS
-                    if (TPS >= 20)
+                    if (TPS >= tps)
                     {
-                        Logger.LogWarning("Reached TPS of 20... blocking... ");
+                        Logger.LogTrace("Maximum TPS reached.  Waiting...");
                         Task.Delay(1000).Wait();
+                        backoffTps = 0;
                     }
 
                     // Stop here and see how many transactions are currently running
                     if (tasks.Count >= totalTasks)
                     {
-                        Task<Task> finished = Task.WhenAny(tasks);
+                        Task finished = await Task.WhenAny(tasks);
                         finished.Wait();
 
                         tasks.Remove(finished);
+                    }
+
+                    totalActionCount++;
+
+                    if (totalActionCount % Config.CheckpointInterval == 0)
+                    {
+                        Logger.LogInformation("ActionQueue has processed {actionCount} in {durration} seconds.  {queueDepth} items are queued. {deadQueueDepth} dead actions encountered."
+                            , totalActionCount, Math.Round((decimal)(sw.ElapsedMilliseconds) / 1000, 2), ActionQueue.Count, DeadActionQueue.Count);
                     }
                 }
             }
@@ -162,7 +254,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             for (int i = 0; i < int.MaxValue; i++)
             {
-                Logger.LogWarning("TPS is {tps}", TPS);
+                Logger.LogTrace("TPS is {tps}.  ActionQueue Depth is {queueDepth}", TPS, ActionQueue.Count);
                 TPS = 0;
 
                 Task timeout = Task.Delay(1000);
@@ -174,35 +266,48 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             Package package = action.Package;
 
-            Logger.LogDebug("Retrieving package information for {packageName} on {domain}/{repository}", package.Name, package.Domain, package.Repository);
-            ListPackageVersionsResponse versions = await Client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
-            {
-                Domain = package.Domain,
-                Repository = package.Repository,
-                Namespace = package.Namespace,
-                Package = package.Name,
-                Format = package.Format
-            }, cancellationToken);
+            Logger.LogDebug("[{actionId}] Retrieving package information for {packageName} on {domain}/{repository}"
+                , action.ActionID, package.Name, package.Domain, package.Repository);
 
-            foreach (PackageVersionSummary version in versions.Versions)
+            try
             {
-                Logger.LogTrace("{packageName} - {packageVersion} - {packageStatus}", package.Name, version.Version, version.Status);
-                package.Versions.Add(new PackageVersion()
+                ListPackageVersionsResponse versions = await Client.ListPackageVersionsAsync(new ListPackageVersionsRequest()
                 {
-                    Version = version.Version,
-                    Revision = version.Revision
-                });
+                    Domain = package.Domain,
+                    Repository = package.Repository,
+                    Namespace = package.Namespace,
+                    Package = package.Name,
+                    Format = package.Format
+                }, cancellationToken);
+
+                foreach (PackageVersionSummary version in versions.Versions)
+                {
+                    Logger.LogTrace("[{actionId}] {packageName} - {packageVersion} - {packageStatus}", action.ActionID, package.Name, version.Version, version.Status);
+                    package.Versions.Add(new PackageVersion()
+                    {
+                        Version = version.Version,
+                        Revision = version.Revision
+                    });
+                }
+
+                // Apply out policy
+                var versionsToRemove = PackagePolicyManager.VersionsOutOfPolicy(package);
+
+                Logger.LogDebug("[{actionId}] Discovered {packageName} from {domain}/{repository} with {versionCount} versions.  {versionsOutOfPolicy} are out of policy."
+                    , action.ActionID, package.Name, package.Domain, package.Repository, package.Versions.Count, versionsToRemove.Count());
+
+                // If we have versions ouf of policy, enqueue the removal
+                if (versionsToRemove.Count() > 0)
+                    ActionQueue.Enqueue(new QueuedActionDeleteVersion(package, versionsToRemove));
             }
+            catch (ThrottlingException)
+            {
+                Logger.LogWarning("[{actionId}] Throttled by Upstream Service.  Requeuing version discovery for package {package} in {domain}/{repository}."
+                    , action.ActionID, package.Name, package.Domain, package.Repository);
 
-            // Apply out policy
-            var versionsToRemove = PackagePolicyManager.VersionsOutOfPolicy(package);
-
-            Logger.LogDebug("Discovered {packageName} from {domain}/{repository} with {versionCount} versions.  {versionsOutOfPolicy} are out of policy."
-                , package.Name, package.Domain, package.Repository, package.Versions.Count, versionsToRemove.Count());
-
-            // If we have versions ouf of policy, enqueue the removal
-            if (versionsToRemove.Count() > 0)
-                ActionQueue.Enqueue(new QueuedActionDeleteVersion(package, versionsToRemove));
+                // Requeue the attempt
+                ActionQueue.Enqueue(action);
+            }
         }
 
         internal async Task RemovePackageVersionAsync(CancellationToken cancellationToken, QueuedActionDeleteVersion action)
@@ -210,8 +315,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             Package package = action.Package;
             IEnumerable<PackageVersion> versions = action.Versions;
 
-            Logger.LogInformation("Deleting {packageName}@{versionsToDelete} from {domain}/{repository}."
-                , package.Name, string.Join(", ", versions.Select(x => x.Version)), package.Domain, package.Repository);
+            Logger.LogInformation("[{actionId}] Deleting {packageName}@{versionsToDelete} from {domain}/{repository}."
+                , action.ActionID, package.Name, string.Join(", ", versions.Select(x => x.Version)), package.Domain, package.Repository);
 
             if (!Config.DryRun)
             {
@@ -221,15 +326,27 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     versionsToDelete.Add(version.Version);
                 }
 
-                await Client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
+                try
                 {
-                    Domain = package.Domain,
-                    Namespace = package.Namespace,
-                    Package = package.Name,
-                    Repository = package.Repository,
-                    Format = package.Format,
-                    Versions = versionsToDelete
-                }, cancellationToken);
+                    await Client.DeletePackageVersionsAsync(new DeletePackageVersionsRequest()
+                    {
+                        Domain = package.Domain,
+                        Namespace = package.Namespace,
+                        Package = package.Name,
+                        Repository = package.Repository,
+                        Format = package.Format,
+                        Versions = versionsToDelete
+                    }, cancellationToken);
+
+                }
+                catch (ThrottlingException)
+                {
+                    Logger.LogWarning("[{actionId}] Throttled by Upstream Service.  Requeuing package version deletion for package {package} in {domain}/{repository}."
+                        , action.ActionID, package.Name, package.Domain, package.Repository);
+
+                    // Requeue the attempt
+                    ActionQueue.Enqueue(action);
+                }
             }
 
             return;
