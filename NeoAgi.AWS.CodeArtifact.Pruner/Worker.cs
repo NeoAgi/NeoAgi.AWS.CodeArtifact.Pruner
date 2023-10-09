@@ -80,32 +80,41 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             if (string.IsNullOrEmpty(Config.Policy))
                 throw new ApplicationException("Policy cannot be empty");
 
-            // Attach our policies to the Manager
-            PersistVersionCount[]? policies = JsonSerializer.Deserialize<PersistVersionCount[]>(Config.Policy, new JsonSerializerOptions()
+            try
             {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (policies == null || policies.Length == 0)
-                throw new ApplicationException("Policy document could not be parsed.");
-
-            PackagePolicyManager.Policies.AddRange(policies);
-
-            // Look to see if we have a default policy
-            bool defaultPolicyFound = false;
-            foreach (var policy in policies)
-            {
-                if (policy.Namespace.Equals("*"))
+                // Attach our policies to the Manager
+                PersistVersionCount[]? policies = JsonSerializer.Deserialize<PersistVersionCount[]>(Config.Policy, new JsonSerializerOptions()
                 {
-                    defaultPolicyFound = true;
-                    break;
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (policies == null || policies.Length == 0)
+                    throw new ApplicationException("Policy document could not be parsed.");
+
+                PackagePolicyManager.Policies.AddRange(policies);
+
+                // Look to see if we have a default policy
+                bool defaultPolicyFound = false;
+                foreach (var policy in policies)
+                {
+                    if (policy.Namespace.Equals("*"))
+                    {
+                        defaultPolicyFound = true;
+                        break;
+                    }
+                }
+
+                if (!defaultPolicyFound)
+                {
+                    PackagePolicyManager.Policies.Add(new PersistVersionCount("*", 100));
+                    Logger.LogWarning("Policy provided did not contain a default rule.  Adding a default rule to keep last 100 versions.");
                 }
             }
-
-            if (!defaultPolicyFound)
+            catch (Exception ex)
             {
-                PackagePolicyManager.Policies.Add(new PersistVersionCount("*", 100));
-                Logger.LogWarning("Policy provided did not contain a default rule.  Adding a default rule to keep last 100 versions.");
+                Logger.LogError("Failed to parse Policy Document.  Message: {message}", ex.Message);
+                AppLifetime.StopApplication();
+                return;
             }
 
             Logger.LogInformation("Policy document contained {policyCount} entries.", PackagePolicyManager.Policies.Count);
