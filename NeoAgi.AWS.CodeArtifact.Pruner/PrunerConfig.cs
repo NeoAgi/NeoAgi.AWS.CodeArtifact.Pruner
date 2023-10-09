@@ -35,5 +35,8 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         [Option(FriendlyName = "Maximum Transactions Per Second", LongName = "tps", Description = "A hard limit of transactions per second to enforce.")]
         public int MaxTransactionsPerSecond { get; set; } = 30;
+
+        [Option(FriendlyName = "Policy JSON", LongName = "policy", Description = "Policy as a JSON String. Structure: [{'Namespace': 'PREFIX.*','VersionsToKeep':INT}]", Required = true)]
+        public string Policy { get; set; } = string.Empty;
     }
 }

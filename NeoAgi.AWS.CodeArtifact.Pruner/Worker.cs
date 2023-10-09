@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -44,11 +45,6 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            // Attach our policies to the Manager
-            PackagePolicyManager.Policies.Add(new PersistVersionCount("NeoAgi*", int.MaxValue));
-            PackagePolicyManager.Policies.Add(new PersistVersionCount("*", 3));
-
-
             // Adjust settings
             string[] repositories = Config.Repository.Split(',');
             string domain = Config.Domain;
@@ -61,14 +57,14 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
             }
 
             // Ensure we have a positive number for Parallism
-            if(Config.Parallalism < 1)
+            if (Config.Parallalism < 1)
             {
                 Logger.LogWarning("Parallelism must be set to a positive integer.  Received {parallismValue}.  Setting to 1 (disables threading).", Config.Parallalism);
                 Config.Parallalism = 1;
             }
 
             // Ensure our TPS is a positive number
-            if(Config.MaxTransactionsPerSecond < 1)
+            if (Config.MaxTransactionsPerSecond < 1)
             {
                 Logger.LogWarning("Maximum Transactions Per Second must be a positive number.  Received {tpsValue}.  Disabling throttling.", Config.MaxTransactionsPerSecond);
                 Config.MaxTransactionsPerSecond = int.MaxValue;
@@ -80,6 +76,22 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             if (Config.DryRun)
                 Logger.LogWarning("Dry Run is enabled.  No changes will be made.");
+
+            if (string.IsNullOrEmpty(Config.Policy))
+                throw new ApplicationException("Policy cannot be empty");
+
+            // Attach our policies to the Manager
+            PersistVersionCount[]? policies = JsonSerializer.Deserialize<PersistVersionCount[]>(Config.Policy, new JsonSerializerOptions()
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (policies == null || policies.Length == 0)
+                throw new ApplicationException("Policy document could not be parsed.");
+
+            PackagePolicyManager.Policies.AddRange(policies);
+
+            Logger.LogInformation("Policy document contained {policyCount} entries.", PackagePolicyManager.Policies.Count);
 
             // Enumerate each repository in the domain
             foreach (string repository in repositories)
@@ -347,6 +359,11 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     // Requeue the attempt
                     ActionQueue.Enqueue(action);
                 }
+            }
+            else
+            {
+                Logger.LogInformation("[{actionId}] Dry Run Mode Enabled.  Would have removed {packageName}@{versionsToDelete} from {domain}/{repository}."
+                , action.ActionID, package.Name, string.Join(", ", versions.Select(x => x.Version)), package.Domain, package.Repository);
             }
 
             return;

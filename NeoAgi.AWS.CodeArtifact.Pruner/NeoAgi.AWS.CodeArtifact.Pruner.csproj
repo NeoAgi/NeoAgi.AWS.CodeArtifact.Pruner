@@ -21,11 +21,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.201.5" />
-		<PackageReference Include="AWSSDK.SSO" Version="3.7.200.48" />
-		<PackageReference Include="AWSSDK.SSOOIDC" Version="3.7.201.5" />
+		<PackageReference Include="AWSSDK.CodeArtifact" Version="3.7.201.10" />
+		<PackageReference Include="AWSSDK.SSO" Version="3.7.201.4" />
+		<PackageReference Include="AWSSDK.SSOOIDC" Version="3.7.201.10" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
-		<PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.2.1" />
+		<PackageReference Include="NeoAgi.CommandLine.Extensions.Configuration" Version="1.5.0" />
 		<PackageReference Include="NLog" Version="5.2.4" />
 		<PackageReference Include="NLog.Extensions.Logging" Version="5.3.4" />
 	</ItemGroup>

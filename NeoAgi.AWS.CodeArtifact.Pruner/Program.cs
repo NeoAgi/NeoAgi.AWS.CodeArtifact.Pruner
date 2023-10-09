@@ -21,14 +21,8 @@ public class Program
         {
             CreateHostBuilder(args).Build().Run();
         }
-        catch(RaiseHelpException) { } // Supporess RaiseHelpException as a NOOP
-        catch (CommandLineOptionParseException ex)
-        {
-            foreach (var option in ex.OptionsWithErrors)
-            {
-                Console.WriteLine($"{option.Option.FriendlyName} - {option.Reason.ToString()}");
-            }
-        }
+        catch (RaiseHelpException) { }               // Supporess RaiseHelpException as a NOOP
+        catch (CommandLineOptionParseException) { }  // Suppress to use the default formatter
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
