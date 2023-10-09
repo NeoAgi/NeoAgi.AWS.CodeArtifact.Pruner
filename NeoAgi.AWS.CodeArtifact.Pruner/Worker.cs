@@ -100,8 +100,9 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                     if (policy.Namespace.Equals("*"))
                     {
                         defaultPolicyFound = true;
-                        break;
                     }
+
+                    Logger.LogDebug("Found Policy: Namespace {namespace}, Versions to Keep {versionCount}", policy.Namespace, policy.VersionsToKeep);
                 }
 
                 if (!defaultPolicyFound)
