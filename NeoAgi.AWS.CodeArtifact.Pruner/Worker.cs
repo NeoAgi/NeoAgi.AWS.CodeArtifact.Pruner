@@ -91,6 +91,23 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
 
             PackagePolicyManager.Policies.AddRange(policies);
 
+            // Look to see if we have a default policy
+            bool defaultPolicyFound = false;
+            foreach (var policy in policies)
+            {
+                if (policy.Namespace.Equals("*"))
+                {
+                    defaultPolicyFound = true;
+                    break;
+                }
+            }
+
+            if (!defaultPolicyFound)
+            {
+                PackagePolicyManager.Policies.Add(new PersistVersionCount("*", 100));
+                Logger.LogWarning("Policy provided did not contain a default rule.  Adding a default rule to keep last 100 versions.");
+            }
+
             Logger.LogInformation("Policy document contained {policyCount} entries.", PackagePolicyManager.Policies.Count);
 
             // Enumerate each repository in the domain

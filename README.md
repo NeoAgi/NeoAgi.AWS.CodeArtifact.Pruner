@@ -38,19 +38,20 @@ A full list of options may be generated using the `--help` flag.  Currently they
 
 ```
 $ docker run public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --help
-USAGE: NeoAgi.AWS.CodeArtifact.Pruner v1.0.0.0
+USAGE: NeoAgi.AWS.CodeArtifact.Pruner v1.0.1.0
+NeoAgi, LLC - 2021 NeoAgi, LLC
 
 Options:
--c, --cacheLocation             | Cache Location - Directory to hold for local cache. (optional)
 -ll, --loglevel                 | Logging Level - Minimum Logging Level to emit.  Availabile options are None, Trace, Debug, Information, Warning, Error, Critical.  Default is Information. (optional)
--ttl, --cacheTtl                | Cache TTL - Number of hours to consider the Cache Location valid for.  Default is 8 hours.  Set to 0 to delete cache. (optional)
 -a, --account                   | AWS Account ID - AWS Account ID to use.  Only necessary if domain and namespace are not unique to the principal provided. (optional)
 -d, --domain                    | Artifact Domain - AWS Artifact Domain to query with.
 -r, --repository                | Artifact Repository - AWS Artifact Repository to query with.
--t, --threads                   | Concurrency Maximum Limit - Maximum threads that will be used for background tasks.  Set to 0 to assume Processor Count - 1. (optional)
 -p, --pageLimit                 | Page Limit - Maximum number of pages to return from AWS Calls.  Default to 50 pages, or about 2,500 packages. (optional)
 -i, --checkpointInterval        | Checkpoint Interval - Number of items processed before a checkpoint information log is emitted.  Set to 0 to disable. (optional)
--dr, --dry-run                  | Dry Run - If set to true, no changes will be commited but logs will indiate what would have occurred.  Default is false. (optional)
+-dr, --dry-run                  | Dry Run - If set to true, all logs will report as if changed occurred yet no modifications will be made.  Default is false. (optional)
+--parallelism                   | Parallalism - The number of concurrent tasks to process at once.  A higher number will increase TPS. (optional)
+--tps                           | Maximum Transactions Per Second - A hard limit of transactions per second to enforce. (optional)
+--policy                        | Policy JSON - Policy as a JSON String. Structure: [{'Namespace': 'PREFIX.*','VersionsToKeep':INT}]
 ```
 
 These options may be specified at the end of the `docker run` command.  For more information see [docker run CMD Reference](https://docs.docker.com/engine/reference/run/#cmd-default-command-or-options).
@@ -93,3 +94,32 @@ Unhandled exception. System.AggregateException: One or more errors occurred. (Un
 ```
 
 Review the Usage Section to set appropriate ENV Variables and try again.
+
+## Policy
+
+The `--policy` directive allows the user to supply a Policy Defintiion for the runtime to evaluate.  Policies must be set using an array of [PersistVersionCount](https://github.com/NeoAgi/NeoAgi.AWS.CodeArtifact.Pruner/blob/main/NeoAgi.AWS.CodeArtifact.Pruner/Policies/PersistVersionCount.cs) 
+which will be parsed into runtime evaluation criteria.  The following will keep the last 100 versions of any namespace starting with NeoAgi, and the last 3 versions of all others:
+
+```json
+[
+  {
+    "Namespace": "NeoAgi*",
+    "VersionsToKeep": 100
+  },
+  {
+    "Namespace": "*",
+    "VersionsToKeep": 3
+  }
+]
+```
+
+The policy parser is primitive at this stage and will be improved upon over time.  Any JSON Errors will be omitted directly for the end user to work with.  
+
+Tips:
+- Remove all whitespace in the JSON (e.g. Do not pretty print).
+- Field names MUST be double quoted.  Single quotes are not handled properly.  
+- Properly escape the data for your shell (e.g. `--policy "[{\"Namespace\": \"*\",\"VersionsToKeep\":3}]"`)
+- If no default policy (`Namespace: *`) is included, the policy manager will add a default rule keeping the last 100 versions
+
+For example the following is the above pretty print honoring JSON Tips:
+`--policy "[{\"Namespace\": \"NeoAgi*\",\"VersionsToKeep\":100},{\"Namespace\":\"*\",\"VersionsToKeep\":3}]"`
