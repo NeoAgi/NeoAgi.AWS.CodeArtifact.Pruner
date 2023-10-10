@@ -7,8 +7,6 @@ AWS CodeArtifact will often be used in two methods:
 
 The Pruner exposes a policy based way of managing the assets stored within CodeArtifact Repositories to limit the storage needed for the service, while retaining key assets for the lifespan desired.  
 
-Note: Please track [this issue](https://github.com/NeoAgi/NeoAgi.AWS.CodeArtifact.Pruner/issues/9) to add custom policies to the pruner.
-
 ## Usage
 
 Typical usage should be done from pulling a docker image  and running it:
@@ -21,13 +19,13 @@ $ docker run public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest --domai
 AWS credentials must be set prior to running.  This can be done by exposing them through docker using the `-e` (assuming $KEY_ID and $KEY_SECRET have been set):
 
 ```
-docker run -e AWS_ACCESS_KEY_ID=${KEY_ID} -e AWS_SECRET_ACCESS_KEY=${KEY_SECRET} -t public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --domain neoagi --repository neoagi
+docker run -e AWS_ACCESS_KEY_ID=${KEY_ID} -e AWS_SECRET_ACCESS_KEY=${KEY_SECRET} -t public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --domain neoagi --repository neoagi --policy <policy JSON>
 ```
 
 or with an `--env-file` directive:
 
 ```
-docker run --env-file ~/aws-creds.env -t public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --domain neoagi --repository neoagi
+docker run --env-file ~/aws-creds.env -t public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest --domain neoagi --repository neoagi --policy <policy JSON>
 ```
 
 For more information see [docker run ENV Reference](https://docs.docker.com/engine/reference/run/#env-environment-variables).
@@ -58,19 +56,21 @@ These options may be specified at the end of the `docker run` command.  For more
 
 ### Dry Run
 
-It may be useful to execte the pruner without modifying the repository. This may be performed by supplying `--dry-run true` to the list of parameters.  This will ommit the following line in the output as a Warning:
+It may be useful to execte the pruner without modifying the repository. This may be performed by supplying `--dry-run` to the list of parameters.  This will ommit the following line in the output as a Warning:
 
 `{ "time": "2022-02-07 09:08:23.3870", "level": "WARN", "method": "NeoAgi.AWS.CodeArtifact.Pruner.Worker", "message": "Dry Run is enabled.  No changes will be made." }`
 
-And no writes will be made to the repository.  No further modificiations will be made to any logs.  
+And no writes will be made to the repository.  Logs will emit what DeletePackageVersion would have been made, all other log entries will be emitted without modification.  
 
-### Caching
+### Performance (Transactions Per Section & Parallelism)
 
-The `--cacheLocation` directive allows for persisting a package cache of the AWS API Results preventing excessive calls to API Quotas.  When set the TTL may optionally be set using `--cacheTtl` to indicate the number of hours the cache should be considered valid.  Any writes to the AWS APIs will immediately invalidate the cache.
+Pruner operations are limited by remote calls to the AWS APIs with `HttpThrottleException` being emitted when rate limiting is applied.  If rate limiting is experienced the Pruner will re-queue the failed operation and 
+enter an expotnetial backoff algorithm followed by a ramp up period to prevent further rate limiting.  
 
-### Performance
-
-Pruner operations are limited by remote calls to the AWS APIs.  Communication to the AWS APIs will allow up to `((Number of Processors exposes to the Container - 1) * 2)` concurrent activities unless specified by the `--threads` setting.  Setting this to 0 will force serial operations and setting this value too high will cause CPU to be consumed managing concurrency than pefroming work.  The default is suggested or some multiple of the availabile processors.
+Performance is capped by the `--tps` flag which provdes a maxiumum of transactions per second to be sent.  Smoothing out TPS can be configured by adjusting the `--parallelism` option which limits how many requests can 
+be "in flgiht" at once.  Depending on latency of each API Call, a high degree of parallellism may fall under the TPS appllied or it may cause bursts of calls followed by blocking to remain under the TPS set.  An ideal ratio 
+will strike a smooth compromize between waiting and processing while staying under the TPS.  Setting `--logLevel DEBUG` may assist to dial in smoothing as it emits log messages reporting action queue depth, observed TPS, and 
+the mount of time waiting once TPS has been reached and any periods where backoff or rampup is occurring.  
 
 ### Logging
 
@@ -87,7 +87,7 @@ Pruner operations are limited by remote calls to the AWS APIs.  Communication to
 The following error will be raised if AWS Credentials are not provided to the container.
 
 ```
-$ docker run public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest
+$ docker run public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest
 { "time": "2022-02-07 16:15:07.4283", "level": "INFO", "method": "NeoAgi.AWS.CodeArtifact.Pruner.Worker", "message": "Starting discovery for \/", "repository": "", "domain": "" }
 { "time": "2022-02-07 16:15:07.4607", "level": "DEBUG", "method": "NeoAgi.AWS.CodeArtifact.Pruner.Worker", "message": "API Cache was missing or stale.  Skipping." }
 Unhandled exception. System.AggregateException: One or more errors occurred. (Unable to get IAM security credentials from EC2 Instance Metadata Service.)
