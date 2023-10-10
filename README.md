@@ -19,7 +19,7 @@ $ docker run public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest --domai
 AWS credentials must be set prior to running.  This can be done by exposing them through docker using the `-e` (assuming $KEY_ID and $KEY_SECRET have been set):
 
 ```
-docker run -e AWS_ACCESS_KEY_ID=${KEY_ID} -e AWS_SECRET_ACCESS_KEY=${KEY_SECRET} -t public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --domain neoagi --repository neoagi --policy <policy JSON>
+docker run -e AWS_ACCESS_KEY_ID=${KEY_ID} -e AWS_SECRET_ACCESS_KEY=${KEY_SECRET} -t public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest --domain neoagi --repository neoagi --policy <policy JSON>
 ```
 
 or with an `--env-file` directive:
@@ -35,7 +35,7 @@ For more information see [docker run ENV Reference](https://docs.docker.com/engi
 A full list of options may be generated using the `--help` flag.  Currently they generate:
 
 ```
-$ docker run public.ecr.aws/x7q2k3a7/neoagi.aws.codeartifact.pruner:latest --help
+$ docker run public.ecr.aws/neoagi/neoagi.aws.codeartifact.pruner:latest --help
 USAGE: NeoAgi.AWS.CodeArtifact.Pruner v1.0.1.0
 NeoAgi, LLC - 2021 NeoAgi, LLC
 
