@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 using NeoAgi.AWS.CodeArtifact.Pruner.Policies;
+using NeoAgi.Threading.RateLimiting;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -211,72 +212,41 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         internal async Task ProcessQueueAsync(CancellationToken cancellationToken)
         {
             // Start a thread to clear out our TPS counter
-            _ = Task.Factory.StartNew(() => StartTPSCounter(cancellationToken));
+            _ = StartTPSCounterAsync(cancellationToken);
 
             int totalActionCount = 0;
-            int tps = Config.MaxTransactionsPerSecond;
-            int backoffTps = 0;
-            int totalTasks = Config.Parallalism;
-            int tpsRatio = (int)(1000 / tps);
-            List<Task> tasks = new List<Task>(totalTasks);
             Stopwatch sw = Stopwatch.StartNew();
 
-            while (!ActionQueue.IsEmpty)
+            await ActionQueue.ProcessWithTPSAsync(Config.MaxTransactionsPerSecond, Config.Parallalism, async (action) =>
             {
-                QueuedAction? action;
-                if (ActionQueue.TryDequeue(out action) && action != null)
+                // Before Processing verify our re-attempt queue
+                if (action.AttemptedCount > 2)
                 {
-                    // Before Processing verify our re-attempt queue
-                    if (action.AttemptedCount > 2)
-                    {
-                        Logger.LogWarning("[{actionId}] Attempted action count exhausted.  Will not re-attempt.", action.ActionID);
-                        DeadActionQueue.Enqueue(action);
-                        continue;
-                    }
+                    Logger.LogWarning("[{actionId}] Attempted action count exhausted.  Will not re-attempt.", action.ActionID);
+                    DeadActionQueue.Enqueue(action);
+                }
+                else
+                {
 
                     // Route our action to the correct handler
                     if (action is QueuedActionGetPackageVersions)
                     {
-                        tasks.Add(DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action));
+                        await DiscoverPackageVersionsAsync(cancellationToken, (QueuedActionGetPackageVersions)action);
                     }
                     else if (action is QueuedActionDeleteVersion)
                     {
-                        tasks.Add(RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action));
+                        await RemovePackageVersionAsync(cancellationToken, (QueuedActionDeleteVersion)action);
                     }
                     else if (action is QueuedActionDiscoverPackages)
                     {
-                        tasks.Add(DiscoverPackagesAsync(cancellationToken, (QueuedActionDiscoverPackages)action));
+                        await DiscoverPackagesAsync(cancellationToken, (QueuedActionDiscoverPackages)action);
                     }
 
                     // Increment our TPS and Backoff Counters
-                    TPS++; backoffTps++;
+                    TPS++;
 
                     // Increment our attempted value
                     action.IncreaseAttempted();
-
-                    // If we've reached our TPS counter, ramp up out speed
-                    if (backoffTps <= tps)
-                    {
-                        Logger.LogTrace("Throttling TPS rampup.  Waiting {tpsRampTime}ms", tpsRatio);
-                        Task.Delay(tpsRatio).Wait();
-                    }
-
-                    // See if we're over our TPS
-                    if (TPS >= tps)
-                    {
-                        Logger.LogTrace("Maximum TPS reached.  Waiting...");
-                        Task.Delay(1000).Wait();
-                        backoffTps = 0;
-                    }
-
-                    // Stop here and see how many transactions are currently running
-                    if (tasks.Count >= totalTasks)
-                    {
-                        Task finished = await Task.WhenAny(tasks);
-                        finished.Wait();
-
-                        tasks.Remove(finished);
-                    }
 
                     totalActionCount++;
 
@@ -286,18 +256,17 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                             , totalActionCount, Math.Round((decimal)(sw.ElapsedMilliseconds) / 1000, 2), ActionQueue.Count, DeadActionQueue.Count);
                     }
                 }
-            }
+            }, cancellationToken);
         }
 
-        internal async Task StartTPSCounter(CancellationToken cancellationToken)
+        internal async Task StartTPSCounterAsync(CancellationToken cancellationToken)
         {
             for (int i = 0; i < int.MaxValue; i++)
             {
-                Logger.LogTrace("TPS is {tps}.  ActionQueue Depth is {queueDepth}", TPS, ActionQueue.Count);
+                Logger.LogWarning("TPS is {tps}.  ActionQueue Depth is {queueDepth}", TPS, ActionQueue.Count);
                 TPS = 0;
 
-                Task timeout = Task.Delay(1000);
-                timeout.Wait();
+                await Task.Delay(1000);
             }
         }
 
