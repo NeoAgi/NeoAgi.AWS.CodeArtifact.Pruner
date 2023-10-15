@@ -1,9 +1,4 @@
 ﻿using NeoAgi.CommandLine;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NeoAgi.AWS.CodeArtifact.Pruner
 {
@@ -31,7 +26,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         public bool DryRun { get; set; } = false;
 
         [Option(FriendlyName = "Parallalism", LongName = "parallelism", Description = "The number of concurrent tasks to process at once.  A higher number will increase TPS.")]
-        public int Parallalism { get; set; } = 5;
+        public int Parallalism { get; set; } = 20;
 
         [Option(FriendlyName = "Maximum Transactions Per Second", LongName = "tps", Description = "A hard limit of transactions per second to enforce.")]
         public int MaxTransactionsPerSecond { get; set; } = 30;
