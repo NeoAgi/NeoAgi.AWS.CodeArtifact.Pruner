@@ -11,6 +11,7 @@ using NeoAgi.AWS.CodeArtifact.Pruner.Models;
 using NeoAgi.CommandLine.Exceptions;
 using NLog;
 using NLog.Extensions.Logging;
+using NLog.Layouts;
 using System;
 
 public class Program
@@ -36,10 +37,27 @@ public class Program
             .ConfigureLogging((hostContext, logBuilder) =>
             {
                 logBuilder.ClearProviders();
-                logBuilder.SetMinimumLevel(Enum<Microsoft.Extensions.Logging.LogLevel>.ParseOrDefault(
-                    hostContext.Configuration.GetValue<string>("AppSettings:LogLevel"), Microsoft.Extensions.Logging.LogLevel.Information));
 
-                logBuilder.AddNLog("nlog.config.xml");
+                Microsoft.Extensions.Logging.LogLevel minimumLogLevel = Enum<Microsoft.Extensions.Logging.LogLevel>.ParseOrDefault(
+                    hostContext.Configuration.GetValue<string>("AppSettings:LogLevel"), Microsoft.Extensions.Logging.LogLevel.Information);
+
+                logBuilder.SetMinimumLevel(minimumLogLevel);
+
+                var config = new NLog.Config.LoggingConfiguration();
+
+                // Targets where to log to: File and Console
+                var logconsole = new NLog.Targets.ColoredConsoleTarget("logconsole");
+                logconsole.Layout = NLogHelper.Layout;
+
+                // Rules for mapping loggers to targets
+                config.AddRule(NLog.LogLevel.Warn, NLog.LogLevel.Fatal, logconsole);
+                config.AddRule(NLogHelper.MapLogLevel(minimumLogLevel), NLog.LogLevel.Fatal, logconsole, "NeoAgi.*");
+
+                // Apply config           
+                NLog.LogManager.Configuration = config;
+
+                // Finally add NLog to the Configuration Builder
+                logBuilder.AddNLog();
             })
             .ConfigureServices((hostContext, services) =>
             {

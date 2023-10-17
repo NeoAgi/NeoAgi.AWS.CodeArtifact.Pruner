@@ -5,7 +5,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
     public class PrunerConfig
     {
         [Option(FriendlyName = "Logging Level", ShortName = "ll", LongName = "loglevel", Description = "Minimum Logging Level to emit.  Availabile options are None, Trace, Debug, Information, Warning, Error, Critical.  Default is Information.", Required = false)]
-        public string LogLevel { get; set; } = "Warning";
+        public string LogLevel { get; set; } = "Information";
 
         [Option(FriendlyName = "AWS Account ID", ShortName = "a", LongName = "account", Description = "AWS Account ID to use.  Only necessary if domain and namespace are not unique to the principal provided.", Required = false)]
         public string AccountID { get; set; } = string.Empty;
