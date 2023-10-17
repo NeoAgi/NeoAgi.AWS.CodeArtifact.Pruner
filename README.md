@@ -74,7 +74,7 @@ the mount of time waiting once TPS has been reached and any periods where backof
 
 ### Logging
 
-`--logLevel` allows more information to be emitted to the output.  Information is used by default which may benefit from adding `--checkpointInterval` to provide an activity indicator if desired.  For reference:
+`--logLevel` allows more information to be emitted to the output.  For reference:
 
 * `--logLevel warning` provides minimal information to the output on process activity limiting logs to errors or critical events that prevent execution.
 * `--logLevel information` will emit key progress points of the process of the pruner containing package counts and modifications attempted.

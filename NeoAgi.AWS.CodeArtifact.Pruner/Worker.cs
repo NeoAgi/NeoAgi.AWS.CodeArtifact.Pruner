@@ -263,7 +263,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         {
             for (int i = 0; i < int.MaxValue; i++)
             {
-                Logger.LogWarning("TPS is {tps}.  ActionQueue Depth is {queueDepth}", TPS, ActionQueue.Count);
+                Logger.LogTrace("TPS is {tps}.  ActionQueue Depth is {queueDepth}", TPS, ActionQueue.Count);
                 TPS = 0;
 
                 await Task.Delay(1000);
