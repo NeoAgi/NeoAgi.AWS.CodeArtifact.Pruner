@@ -1,4 +1,5 @@
 ﻿using Amazon.CodeArtifact.Model;
+using Semver;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,6 +29,11 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Models
             Name = summary.Package;
             Format = summary.Format.Value;
             Namespace = summary.Namespace;
+        }
+
+        public List<PackageVersion> SortVersions()
+        {
+            return Versions.OrderBy(x => SemVersion.Parse(x.Version, SemVersionStyles.Strict)).ToList();
         }
     }
 }

@@ -9,16 +9,22 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
 {
     public class PolicyManager
     {
-        public List<IPolicy> Policies { get; set; } = new List<IPolicy>();
+        public List<IPolicy> Policies { get; protected set; }
 
-        public PolicyManager()
+        public PolicyManager(List<IPolicy> policies)
         {
-            
+            Policies = policies;
+            SortPolicies();
         }
+
+        public PolicyManager(IEnumerable<IPolicy> policies)
+            : this(new List<IPolicy>(policies)) { }
 
         public IEnumerable<PackageVersion> VersionsOutOfPolicy(Package package)
         {
             List<PackageVersion> versionsOutOfPolicy = new List<PackageVersion>();
+
+            SortPolicies();
 
             foreach (IPolicy policy in Policies)
             {
@@ -47,6 +53,11 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
             }
 
             return versionsOutOfPolicy;
+        }
+
+        protected void SortPolicies()
+        {
+            Policies.Sort((x, y) => y.Identifier.Length.CompareTo(x.Identifier.Length));
         }
     }
 }

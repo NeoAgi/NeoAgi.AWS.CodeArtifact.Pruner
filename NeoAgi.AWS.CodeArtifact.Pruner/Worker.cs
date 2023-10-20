@@ -27,7 +27,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
         private readonly ConcurrentQueue<QueuedAction> DeadActionQueue = new ConcurrentQueue<QueuedAction>();
 
         private AmazonCodeArtifactClient Client { get; set; }
-        private PolicyManager PackagePolicyManager { get; set; } = new PolicyManager();
+        private PolicyManager? PackagePolicyManager { get; set; }
 
         private int TPS = 0;
         private Dictionary<string, int> TotalPackages = new Dictionary<string, int>();
@@ -92,7 +92,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 if (policies == null || policies.Length == 0)
                     throw new ApplicationException("Policy document could not be parsed.");
 
-                PackagePolicyManager.Policies.AddRange(policies);
+                PackagePolicyManager = new PolicyManager(policies);
 
                 // Look to see if we have a default policy
                 bool defaultPolicyFound = false;
@@ -299,7 +299,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner
                 }
 
                 // Apply out policy
-                var versionsToRemove = PackagePolicyManager.VersionsOutOfPolicy(package);
+                var versionsToRemove = PackagePolicyManager!.VersionsOutOfPolicy(package);
 
                 Logger.LogDebug("[{actionId}] Discovered {packageName} from {domain}/{repository} with {versionCount} versions.  {versionsOutOfPolicy} are out of policy."
                     , action.ActionID, package.Name, package.Domain, package.Repository, package.Versions.Count, versionsToRemove.Count());

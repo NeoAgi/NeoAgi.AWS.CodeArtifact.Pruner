@@ -9,6 +9,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
 {
     public interface IPolicy
     {
+        string Identifier { get; }
         public bool IsMatch(Package package);
         public IEnumerable<PackageVersion> Match(Package package);
     }
