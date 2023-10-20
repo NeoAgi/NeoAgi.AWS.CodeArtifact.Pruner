@@ -9,6 +9,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
 {
     public class PersistVersionCount : IPolicy
     {
+        public string Identifier { get { return Namespace; } }
         public string Namespace { get; set; } = string.Empty;
         public int VersionsToKeep { get; set; } = int.MaxValue;
 
@@ -24,14 +25,17 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
             if (Namespace.Contains('*'))
             {
                 effectiveNamespace = Namespace.Substring(0, Namespace.IndexOf('*'));
+                return package.Name.StartsWith(effectiveNamespace, StringComparison.OrdinalIgnoreCase);
             }
-
-            return package.Name.StartsWith(effectiveNamespace, StringComparison.OrdinalIgnoreCase);
+            else
+            {
+                return package.Name.Equals(effectiveNamespace, StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         public IEnumerable<PackageVersion> Match(Package package)
         {
-            if(IsMatch(package))
+            if (IsMatch(package))
             {
                 return Reduce(package);
             }
@@ -42,7 +46,7 @@ namespace NeoAgi.AWS.CodeArtifact.Pruner.Policies
         protected IEnumerable<PackageVersion> Reduce(Package package)
         {
             // If we're keeping zero versions, bail early
-            if(VersionsToKeep <= 0)
+            if (VersionsToKeep <= 0)
                 return Enumerable.Empty<PackageVersion>();
 
             // If we're keeping the upper bounds, just bail early
